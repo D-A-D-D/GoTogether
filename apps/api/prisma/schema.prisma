@@ -1,0 +1,262 @@
+// GoTogether — Phase 0 schema (docs/ROADMAP.md, docs/BLUEPRINT.md §03)
+// Single-market, single-currency for now (confirmed open decision #5) —
+// budgetMin/budgetMax are plain integers in one implied currency; revisit
+// with a currency column if/when multi-currency scope is picked up.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity & trust ----------
+
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  passwordHash String? // null for OAuth-only accounts
+
+  name    String
+  bio     String?
+  // Home location: only city/region ever leaves the server (BLUEPRINT §09).
+  // homeLat/homeLng are the precise geocode used server-side for the
+  // matching engine's location factor — never select these into a
+  // client-facing DTO.
+  homeCity   String?
+  homeRegion String?
+  homeLat    Float?
+  homeLng    Float?
+
+  trustScore       Int              @default(50)
+  verificationTier VerificationTier @default(EMAIL)
+  accountStatus    AccountStatus    @default(ACTIVE)
+
+  preferenceTags Tag[] @relation("UserPreferenceTags")
+
+  hostedTrips      Trip[]             @relation("TripHost")
+  memberships      TripMembership[]
+  trustScoreEvents TrustScoreEvent[]  @relation("TrustScoreEventUser")
+  refreshTokens    RefreshToken[]
+  oauthAccounts    OAuthAccount[]
+  reportsFiled     Report[]           @relation("ReportReporter")
+  reportsReceived  Report[]           @relation("ReportReported")
+  blocksInitiated  Block[]            @relation("BlockBlocker")
+  blocksReceived   Block[]            @relation("BlockBlocked")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([trustScore])
+}
+
+enum VerificationTier {
+  EMAIL
+  PHONE
+  ID
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+model OAuthAccount {
+  id                String   @id @default(cuid())
+  provider          String // "google" | "apple"
+  providerAccountId String
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+
+  @@unique([provider, providerAccountId])
+}
+
+// Refresh tokens are stored hashed and rotated on use — never the raw token.
+model RefreshToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  replacedBy String?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Controlled tag vocabulary — NOT free text. `category` gates whether a
+// tag is eligible as a private Trip.excludeTags filter (BLUEPRINT §01):
+// only STYLE tags should ever be allowed there at the application layer.
+model Tag {
+  id       String      @id @default(cuid())
+  name     String      @unique
+  category TagCategory
+  isActive Boolean     @default(true)
+
+  usersWithPreference User[] @relation("UserPreferenceTags")
+  tripsIncluding      Trip[] @relation("TripIncludeTags")
+  tripsExcluding      Trip[] @relation("TripExcludeTags")
+
+  createdAt DateTime @default(now())
+}
+
+enum TagCategory {
+  STYLE // trip-style/logistics — safe as a private exclude filter
+  IDENTITY // who someone is — include-only, surfaced via Trip.tripType, never a silent exclude
+  DIETARY
+  SAFETY
+}
+
+// Append-only audit trail behind every trust-score change (BLUEPRINT §05).
+model TrustScoreEvent {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation("TrustScoreEventUser", fields: [userId], references: [id], onDelete: Cascade)
+  delta          Int
+  reason         String
+  resultingScore Int
+  sourceReviewId String?
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ---------- Trips & membership ----------
+
+model Trip {
+  id          String  @id @default(cuid())
+  hostId      String
+  host        User    @relation("TripHost", fields: [hostId], references: [id])
+  title       String
+  description String?
+  destination String
+
+  startDate     DateTime
+  endDate       DateTime
+  flexibleDates Boolean  @default(false)
+
+  // Single currency for now — see file header note.
+  budgetMin Int
+  budgetMax Int
+  capacity  Int
+
+  // Up to 3, enforced at the application layer (Prisma can't cap list length).
+  includeTags Tag[] @relation("TripIncludeTags")
+  // Private — must never appear in a DTO reachable by a non-host user.
+  // Application layer restricts this to TagCategory.STYLE only (BLUEPRINT §01).
+  excludeTags Tag[] @relation("TripExcludeTags")
+
+  // Visible, explicit alternative to identity-based exclusion (BLUEPRINT §01)
+  tripType String?
+
+  status     TripStatus     @default(DRAFT)
+  visibility TripVisibility @default(PUBLIC)
+
+  coverPhotoUrl String?
+
+  memberships TripMembership[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, startDate])
+}
+
+enum TripStatus {
+  DRAFT
+  OPEN
+  FULL
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum TripVisibility {
+  PUBLIC
+  UNLISTED
+}
+
+// The overlap-prevention rule (BLUEPRINT §03) can't be expressed in the
+// Prisma schema — it needs a Postgres GIST EXCLUDE constraint. That's added
+// via raw SQL in prisma/migrations/<ts>_trip_membership_overlap/migration.sql
+// once the first migration runs against a real database. See that file for
+// the exact constraint.
+model TripMembership {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role   MembershipRole   @default(MEMBER)
+  status MembershipStatus @default(REQUESTED)
+
+  requestedAt DateTime  @default(now())
+  respondedAt DateTime?
+  leftAt      DateTime?
+
+  // Mirrors the parent Trip's [startDate, endDate) range; kept in sync by a
+  // DB trigger (see prisma/migrations-manual/001_trip_membership_overlap.sql)
+  // so the GIST EXCLUDE constraint below can compare across rows without a
+  // join. `Unsupported` because Prisma Client can't query range types
+  // directly — writes happen via the trigger, not the ORM.
+  period Unsupported("daterange")?
+
+  @@unique([tripId, userId])
+  @@index([userId, status])
+}
+
+enum MembershipRole {
+  HOST
+  MEMBER
+}
+
+enum MembershipStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  LEFT
+  REMOVED
+}
+
+// ---------- Safety ----------
+
+model Report {
+  id         String       @id @default(cuid())
+  reporterId String
+  reporter   User         @relation("ReportReporter", fields: [reporterId], references: [id])
+  reportedId String
+  reported   User         @relation("ReportReported", fields: [reportedId], references: [id])
+  tripId     String?
+  reason     String
+  details    String?
+  status     ReportStatus @default(OPEN)
+  createdAt  DateTime     @default(now())
+
+  @@index([reportedId, status])
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  ACTIONED
+  DISMISSED
+}
+
+// Symmetric hide — application layer must check both directions.
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("BlockBlocker", fields: [blockerId], references: [id])
+  blockedId String
+  blocked   User     @relation("BlockBlocked", fields: [blockedId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
