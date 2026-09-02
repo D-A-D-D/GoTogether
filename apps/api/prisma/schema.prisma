@@ -9,8 +9,14 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Pooled connection for the app's normal query traffic (Neon's PgBouncer
+  // endpoint scales better under many short-lived connections).
+  url       = env("DATABASE_URL")
+  // Direct (unpooled) connection for migrations — DDL and Prisma's
+  // migration engine need prepared-statement support that PgBouncer's
+  // transaction-pooling mode doesn't provide.
+  directUrl = env("DATABASE_URL_DIRECT")
 }
 
 // ---------- Identity & trust ----------
@@ -202,10 +208,10 @@ model TripMembership {
   leftAt      DateTime?
 
   // Mirrors the parent Trip's [startDate, endDate) range; kept in sync by a
-  // DB trigger (see prisma/migrations-manual/001_trip_membership_overlap.sql)
-  // so the GIST EXCLUDE constraint below can compare across rows without a
-  // join. `Unsupported` because Prisma Client can't query range types
-  // directly — writes happen via the trigger, not the ORM.
+  // DB trigger (see prisma/migrations/20260902094145_trip_membership_overlap)
+  // so the GIST EXCLUDE constraint on this table can compare across rows
+  // without a join. `Unsupported` because Prisma Client can't query range
+  // types directly — writes happen via the trigger, not the ORM.
   period Unsupported("daterange")?
 
   @@unique([tripId, userId])
