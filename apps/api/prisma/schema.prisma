@@ -53,6 +53,8 @@ model User {
   blocksInitiated  Block[]            @relation("BlockBlocker")
   blocksReceived   Block[]            @relation("BlockBlocked")
   sentMessages     Message[]
+  expensesPaid     Expense[]          @relation("ExpensePaidBy")
+  expenseSplits    ExpenseSplit[]     @relation("ExpenseSplitUser")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -169,6 +171,7 @@ model Trip {
 
   memberships TripMembership[]
   chatRoom    ChatRoom?
+  expenses    Expense[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -258,6 +261,45 @@ model Message {
   createdAt DateTime @default(now())
 
   @@index([roomId, createdAt])
+}
+
+// ---------- Expenses ----------
+
+// A ledger, not a payment rail (BLUEPRINT §06) — nothing here ever moves
+// money. `amount` is a plain integer in the trip's one implied currency,
+// same convention as Trip.budgetMin/Max.
+model Expense {
+  id          String @id @default(cuid())
+  tripId      String
+  trip        Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  paidById    String
+  paidBy      User   @relation("ExpensePaidBy", fields: [paidById], references: [id])
+  description String
+  amount      Int
+  category    String?
+
+  splits    ExpenseSplit[]
+  createdAt DateTime       @default(now())
+
+  @@index([tripId, createdAt])
+}
+
+// One row per person who owes a share of an Expense — including the payer
+// themselves, so splits always sum to the expense's full amount and a
+// payer's own share nets to zero against what they fronted.
+model ExpenseSplit {
+  id        String    @id @default(cuid())
+  expenseId String
+  expense   Expense   @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation("ExpenseSplitUser", fields: [userId], references: [id])
+  amount    Int
+  // Manual "mark as paid" (BLUEPRINT §06) — either side of the debt can set
+  // this; see docs/IDEAS.md for the two-step-confirm version this skips for v1.
+  settled   Boolean   @default(false)
+  settledAt DateTime?
+
+  @@unique([expenseId, userId])
 }
 
 // ---------- Safety ----------
