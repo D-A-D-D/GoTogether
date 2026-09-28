@@ -16,10 +16,19 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "GoTogether",
   description: "Find travel companions, host or join trips, and travel together.",
+  // iOS reads these separately from the Web App Manifest for its own
+  // "Add to Home Screen" behavior (status bar style, standalone title).
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "GoTogether",
+  },
 };
 
 export const viewport: Viewport = {
   themeColor: "#1F6F6B",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

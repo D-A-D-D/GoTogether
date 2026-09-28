@@ -4,7 +4,14 @@
 // those pieces get built — this is installability + a shell cache, not
 // a full offline strategy yet.
 
-const CACHE_NAME = 'gotogether-shell-v1';
+// Bump this whenever a shell asset changes (manifest fields, icons, the
+// root page markup) — cache-first means a returning visitor keeps seeing
+// whatever was cached under the OLD name until `activate` clears it below;
+// a content change with no version bump is invisible to them. Found this
+// firsthand while testing manifest changes against an already-registered
+// SW in this same session — the server was serving the new file the whole
+// time, the browser's Cache Storage just never asked it for a fresh copy.
+const CACHE_NAME = 'gotogether-shell-v2';
 const SHELL_ASSETS = ['/', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
