@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PrismaService } from '../prisma/prisma.service.js';
 import { MembershipStatus, TripStatus, type Review, type Trip } from '../generated/prisma/index.js';
 import { CreateReviewDto } from './dto/create-review.dto.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 const PUBLIC_SELECT = { id: true, name: true, trustScore: true } as const;
 
@@ -36,7 +37,10 @@ function clampToTripCap(priorSum: number, newDelta: number, cap: number): number
 
 @Injectable()
 export class ReviewsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /** "Held approved membership" per BLUEPRINT §05 — currently approved, or approved-then-left/removed. */
   private async assertEverApprovedMember(tripId: string, userId: string): Promise<void> {
@@ -206,6 +210,18 @@ export class ReviewsService {
       }),
       this.prisma.review.update({ where: { id: review.id }, data: { processedAt: new Date() } }),
     ]);
+
+    // Only ever fires once the blind window has actually resolved — the
+    // notification itself can't leak anything early since this whole
+    // method only runs at that point.
+    await this.notifications.notifyUser(review.revieweeId, {
+      title: 'New review received',
+      body:
+        delta === 0
+          ? "A teammate's review of you came in"
+          : `Your trust score just ${delta > 0 ? 'went up' : 'went down'} — a review came in`,
+      url: `/trips/${review.tripId}/reviews/received`,
+    });
   }
 
   listMyTrustEvents(userId: string) {

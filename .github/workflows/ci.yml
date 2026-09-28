@@ -17,6 +17,13 @@ jobs:
       DATABASE_URL: "postgresql://gotogether:gotogether@localhost:5432/gotogether?schema=public"
       JWT_ACCESS_SECRET: "ci-only-access-secret"
       JWT_REFRESH_SECRET: "ci-only-refresh-secret"
+      # NotificationsService.onModuleInit() calls webpush.setVapidDetails()
+      # at boot, which validates key format — so these need to be a real,
+      # well-formed VAPID pair (CI-only, unrelated to the dev .env's pair;
+      # nothing ever actually sends a push in CI).
+      VAPID_SUBJECT: "mailto:ci@example.com"
+      VAPID_PUBLIC_KEY: "BAfybIdajMt-ce29lEo8ituEVH1cVNzthSOr_z_rnW87gO-RlmnCnf_mH-lmXQIYzfTZf9O8D6dXUyyX3ImoI3k"
+      VAPID_PRIVATE_KEY: "IPtOAOrVEd18ttCqzLkEim03hS9GhBi6_-L-kDf7zTQ"
     steps:
       - uses: actions/checkout@v4
 

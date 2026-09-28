@@ -57,6 +57,7 @@ model User {
   expenseSplits    ExpenseSplit[]     @relation("ExpenseSplitUser")
   reviewsGiven     Review[]           @relation("ReviewReviewer")
   reviewsReceived  Review[]           @relation("ReviewReviewee")
+  pushSubscriptions PushSubscription[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -339,6 +340,24 @@ model Review {
   @@unique([tripId, reviewerId, revieweeId])
   @@index([tripId])
   @@index([revieweeId])
+}
+
+// ---------- Notifications ----------
+
+// One row per browser/device a user has enabled push on (Web Push has no
+// concept of "one subscription per user" — each browser install gets its
+// own endpoint+keys). `endpoint` alone is unique across all users since
+// it's assigned by the browser's push service.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // ---------- Safety ----------

@@ -4,9 +4,10 @@ import { JwtModule } from '@nestjs/jwt';
 import { ChatService } from './chat.service.js';
 import { ChatController } from './chat.controller.js';
 import { ChatGateway } from './chat.gateway.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 
 @Module({
-  imports: [PassportModule.register({}), JwtModule.register({})],
+  imports: [PassportModule.register({}), JwtModule.register({}), NotificationsModule],
   providers: [ChatService, ChatGateway],
   controllers: [ChatController],
   exports: [ChatService],

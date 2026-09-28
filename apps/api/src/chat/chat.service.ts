@@ -1,12 +1,17 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { MembershipStatus } from '../generated/prisma/index.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 
 const SENDER_SELECT = { id: true, name: true } as const;
+const MESSAGE_PREVIEW_LENGTH = 80;
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /**
    * A trip's chat room is only open to its APPROVED members (host
@@ -33,10 +38,27 @@ export class ChatService {
   async createMessage(tripId: string, senderId: string, content: string) {
     await this.assertCanAccess(tripId, senderId);
     const roomId = await this.getRoomId(tripId);
-    return this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: { roomId, senderId, content },
       include: { sender: { select: SENDER_SELECT } },
     });
+
+    // Best-effort, fire-and-forget from the caller's perspective — a member
+    // who's actively connected already got this over the socket; a push
+    // notification to them too is a known, accepted redundancy (no
+    // presence-tracking yet to suppress it — see docs/IDEAS.md).
+    const others = await this.prisma.tripMembership.findMany({
+      where: { tripId, status: MembershipStatus.APPROVED, userId: { not: senderId } },
+      select: { userId: true },
+    });
+    const preview =
+      content.length > MESSAGE_PREVIEW_LENGTH ? `${content.slice(0, MESSAGE_PREVIEW_LENGTH)}…` : content;
+    await this.notifications.notifyUsers(
+      others.map((m) => m.userId),
+      { title: message.sender.name, body: preview, url: `/trips/${tripId}/chat` },
+    );
+
+    return message;
   }
 
   /**

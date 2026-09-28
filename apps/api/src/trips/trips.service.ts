@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { MatchingService } from './matching.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { DiscoverTripsDto } from './dto/discover-trips.dto.js';
 import {
@@ -46,6 +47,7 @@ export class TripsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly matching: MatchingService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Strips the private exclude-tag list unless the viewer is the host (BLUEPRINT §01/§09). */
@@ -272,9 +274,15 @@ export class TripsService {
     }
 
     try {
-      return await this.prisma.tripMembership.create({
+      const membership = await this.prisma.tripMembership.create({
         data: { tripId, userId, role: MembershipRole.MEMBER, status: MembershipStatus.REQUESTED },
       });
+      await this.notifications.notifyUser(trip.host.id, {
+        title: 'New join request',
+        body: `${user.name} wants to join "${trip.title}"`,
+        url: `/trips/${tripId}/requests`,
+      });
+      return membership;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('You have already requested or joined this trip');
@@ -309,10 +317,16 @@ export class TripsService {
     }
 
     if (decision === MembershipStatus.REJECTED) {
-      return this.prisma.tripMembership.update({
+      const rejected = await this.prisma.tripMembership.update({
         where: { id: membershipId },
         data: { status: MembershipStatus.REJECTED, respondedAt: new Date() },
       });
+      await this.notifications.notifyUser(membership.userId, {
+        title: 'Request declined',
+        body: `Your request to join "${trip.title}" wasn't accepted this time`,
+        url: `/trips/${tripId}`,
+      });
+      return rejected;
     }
 
     const approvedCount = await this.prisma.tripMembership.count({
@@ -331,6 +345,12 @@ export class TripsService {
       if (approvedCount + 1 >= trip.capacity) {
         await this.prisma.trip.update({ where: { id: tripId }, data: { status: TripStatus.FULL } });
       }
+
+      await this.notifications.notifyUser(membership.userId, {
+        title: "You're in!",
+        body: `Your request to join "${trip.title}" was approved`,
+        url: `/trips/${tripId}`,
+      });
 
       return updated;
     } catch (error) {
