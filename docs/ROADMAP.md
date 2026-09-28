@@ -13,6 +13,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - **2026-09-02** — Auth: email/password register/login, JWT access token + rotating hashed refresh token (httpOnly cookie), logout/revoke, Google OAuth scaffold (needs real client credentials — see Open decisions/`.env.example`), Apple OAuth left unscaffolded (cert-based flow, more setup than Google — follow-up). **Full flow smoke-tested against the real database**: register → login → `GET/PATCH /users/me` (incl. tag assignment) → cookie refresh rotation → logout → post-logout refresh correctly rejected.
 - **2026-09-02** — User profile: `GET/PATCH /users/me`, tag taxonomy seeded (24 tags across style/identity/dietary/safety from BLUEPRINT §01) and confirmed queryable via `GET /tags`.
 - **2026-09-02** — PWA shell: `app/manifest.ts`, placeholder icons, service worker (`public/sw.js`, app-shell caching) + registration component. Manifest/icons/link-tags verified live in-browser; **service worker registration itself couldn't be confirmed in this sandboxed preview browser** (the registration call never even reached the network — looks like the preview tool blocks SW registration, not an app bug) — worth a quick check in a real Chrome tab.
+- **2026-09-28** — Trips module (`apps/api/src/trips/`): create (host flow, up to 3 include tags, STYLE-only exclude tags enforced server-side, auto-creates the host's own APPROVED membership), `GET /trips/hosted`, `GET /trips/discover` (hard filters + weighted match score), `GET /trips/:id`, request-to-join, host list/approve/reject requests. **Fully smoke-tested against the real database**: exclude-tag hard filter confirmed to hide a trip from discovery AND block a direct join attempt (403); the Postgres overlap exclusion constraint confirmed to fire correctly through the API at approval time (409, membership stays REQUESTED, trip stays OPEN); capacity correctly flips a trip to FULL and blocks further requests; self-join, duplicate-request, and non-host-lists-requests all correctly rejected. Matching v1 implemented per BLUEPRINT §04 with one documented deviation: budget/dates are query-time search intent (`DiscoverTripsDto`), not a stored User preference — see `matching.service.ts` doc comment and `docs/IDEAS.md`.
 
 ---
 
@@ -29,11 +30,12 @@ Phase 0 is functionally done pending: a real Chrome check of the service worker,
 
 ## Phase 1 — MVP core
 
-- [ ] Trip creation (host flow, include_tags/exclude_tags, budget, dates, capacity)
-- [ ] Discovery feed
-- [ ] Matching v1 — hard filters (exclude tags, capacity, overlap, blocks) + weighted score (tag 40 / date 25 / budget 25 / location 10)
-- [ ] Request → host-approve flow
+- [x] Trip creation (host flow, include_tags/exclude_tags, budget, dates, capacity)
+- [x] Discovery feed
+- [x] Matching v1 — hard filters (exclude tags, capacity, overlap, blocks) + weighted score (tag 40 / date 25 / budget 25 / location 10)
+- [x] Request → host-approve flow
 - [x] Overlap constraint — Postgres `daterange` + `GIST EXCLUDE`, scoped to `status='approved'` (landed early, alongside the base schema — see Phase 0)
+- [ ] Leave/remove trip membership — small gap, not yet built (see docs/IDEAS.md)
 - [ ] Basic group chat (Socket.io + Redis adapter), room auto-created on first approval
 
 ## Phase 2 — Complete the loop
@@ -70,9 +72,9 @@ Confirm or override — see BLUEPRINT.md §13 for full reasoning on each.
 
 | # | Decision | Default | Status |
 |---|---|---|---|
-| 1 | Exclude-tag policy (style-only exclude vs. identity as visible `trip_type`) | Split — see §01 | **needs your sign-off** |
+| 1 | Exclude-tag policy (style-only exclude vs. identity as visible `trip_type`) | Split — see §01 | implemented as recommended (Tag.category) |
 | 2 | Chat: build vs. buy | Build (Socket.io + Redis) | open |
-| 3 | Backend language | TypeScript/NestJS | open |
+| 3 | Backend language | TypeScript/NestJS | **confirmed** 2026-09-02 |
 | 4 | In-app payments | Defer | open |
-| 5 | Launch geography & currency scope | — | **blocking §03/§04 schema work** |
+| 5 | Launch geography & currency scope | Single market, single currency | **confirmed** 2026-09-02 |
 | 6 | Native app wrapper | PWA-only through Phase 3 | open |
