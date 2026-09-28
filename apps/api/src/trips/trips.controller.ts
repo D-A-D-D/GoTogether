@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAccessGuard } from '../auth/guards/jwt-access.guard.js';
 import { CurrentUser, type RequestUser } from '../auth/current-user.decorator.js';
 import { TripsService } from './trips.service.js';
@@ -49,5 +49,19 @@ export class TripsController {
     @Body() dto: RespondToRequestDto,
   ) {
     return this.tripsService.respondToRequest(id, membershipId, user.userId, dto.decision);
+  }
+
+  @Post(':id/leave')
+  leave(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.tripsService.leave(id, user.userId);
+  }
+
+  @Delete(':id/members/:membershipId')
+  removeMember(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Param('membershipId') membershipId: string,
+  ) {
+    return this.tripsService.removeMember(id, membershipId, user.userId);
   }
 }

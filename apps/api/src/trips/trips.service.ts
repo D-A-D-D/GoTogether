@@ -111,6 +111,11 @@ export class TripsService {
             },
           });
 
+          // The host's own membership above is the trip's first approval,
+          // so the room is created right here rather than waiting on a
+          // separate "first approval" event (BLUEPRINT §06).
+          await tx.chatRoom.create({ data: { tripId: trip.id } });
+
           return trip;
         },
         // Neon's pooled endpoint can add real latency to the first query of a
@@ -333,6 +338,77 @@ export class TripsService {
         throw new ConflictException('This user already has an approved trip during these dates');
       }
       throw error;
+    }
+  }
+
+  /**
+   * A user leaving their own membership. A REQUESTED row is deleted
+   * outright (withdrawing a request should let them request again later —
+   * @@unique([tripId, userId]) would otherwise block that forever). An
+   * APPROVED row is marked LEFT instead of deleted: it's a real event in
+   * the trip's history, and the unique constraint correctly prevents
+   * rejoining a trip once you've left it.
+   */
+  async leave(tripId: string, userId: string) {
+    const membership = await this.prisma.tripMembership.findUnique({
+      where: { tripId_userId: { tripId, userId } },
+    });
+    if (!membership) {
+      throw new NotFoundException("You don't have a membership on this trip");
+    }
+    if (membership.role === MembershipRole.HOST) {
+      throw new BadRequestException("The host can't leave their own trip");
+    }
+
+    if (membership.status === MembershipStatus.REQUESTED) {
+      await this.prisma.tripMembership.delete({ where: { id: membership.id } });
+      return { status: MembershipStatus.LEFT };
+    }
+    if (membership.status !== MembershipStatus.APPROVED) {
+      throw new ConflictException('This membership is already settled — nothing to leave');
+    }
+
+    const updated = await this.prisma.tripMembership.update({
+      where: { id: membership.id },
+      data: { status: MembershipStatus.LEFT, leftAt: new Date() },
+    });
+    await this.reopenIfNoLongerFull(tripId);
+    return updated;
+  }
+
+  /** Host-initiated removal of an approved member — same reopen-if-needed behavior as leave(). */
+  async removeMember(tripId: string, membershipId: string, hostUserId: string) {
+    await this.assertIsHost(tripId, hostUserId);
+
+    const membership = await this.prisma.tripMembership.findUnique({ where: { id: membershipId } });
+    if (!membership || membership.tripId !== tripId) {
+      throw new NotFoundException('Member not found');
+    }
+    if (membership.role === MembershipRole.HOST) {
+      throw new BadRequestException("The host can't remove themselves");
+    }
+    if (membership.status !== MembershipStatus.APPROVED) {
+      throw new ConflictException('This user is not an approved member of this trip');
+    }
+
+    const updated = await this.prisma.tripMembership.update({
+      where: { id: membershipId },
+      data: { status: MembershipStatus.REMOVED, leftAt: new Date() },
+    });
+    await this.reopenIfNoLongerFull(tripId);
+    return updated;
+  }
+
+  /** A trip marked FULL that just lost an approved member should accept requests again. */
+  private async reopenIfNoLongerFull(tripId: string): Promise<void> {
+    const trip = await this.prisma.trip.findUnique({ where: { id: tripId } });
+    if (!trip || trip.status !== TripStatus.FULL) return;
+
+    const approvedCount = await this.prisma.tripMembership.count({
+      where: { tripId, status: MembershipStatus.APPROVED },
+    });
+    if (approvedCount < trip.capacity) {
+      await this.prisma.trip.update({ where: { id: tripId }, data: { status: TripStatus.OPEN } });
     }
   }
 

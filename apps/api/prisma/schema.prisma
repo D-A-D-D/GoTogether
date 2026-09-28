@@ -52,6 +52,7 @@ model User {
   reportsReceived  Report[]           @relation("ReportReported")
   blocksInitiated  Block[]            @relation("BlockBlocker")
   blocksReceived   Block[]            @relation("BlockBlocked")
+  sentMessages     Message[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -167,6 +168,7 @@ model Trip {
   coverPhotoUrl String?
 
   memberships TripMembership[]
+  chatRoom    ChatRoom?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -229,6 +231,33 @@ enum MembershipStatus {
   REJECTED
   LEFT
   REMOVED
+}
+
+// ---------- Chat ----------
+
+// One room per trip, created alongside the trip itself (BLUEPRINT §06) —
+// the host's own membership is auto-approved at creation, so "created on
+// first approval" and "created with the trip" are the same moment here.
+model ChatRoom {
+  id     String @id @default(cuid())
+  tripId String @unique
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  messages  Message[]
+  createdAt DateTime  @default(now())
+}
+
+model Message {
+  id       String   @id @default(cuid())
+  roomId   String
+  room     ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  senderId String
+  sender   User     @relation(fields: [senderId], references: [id])
+  content  String
+
+  createdAt DateTime @default(now())
+
+  @@index([roomId, createdAt])
 }
 
 // ---------- Safety ----------
