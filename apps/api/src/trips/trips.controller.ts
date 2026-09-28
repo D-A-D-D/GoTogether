@@ -64,4 +64,9 @@ export class TripsController {
   ) {
     return this.tripsService.removeMember(id, membershipId, user.userId);
   }
+
+  @Post(':id/complete')
+  complete(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.tripsService.complete(id, user.userId);
+  }
 }

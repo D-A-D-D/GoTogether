@@ -8,6 +8,7 @@ import { TagsModule } from './tags/tags.module.js';
 import { TripsModule } from './trips/trips.module.js';
 import { ChatModule } from './chat/chat.module.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
+import { ReviewsModule } from './reviews/reviews.module.js';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ExpensesModule } from './expenses/expenses.module.js';
     TripsModule,
     ChatModule,
     ExpensesModule,
+    ReviewsModule,
   ],
   controllers: [AppController],
 })

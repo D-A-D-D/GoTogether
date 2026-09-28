@@ -55,6 +55,8 @@ model User {
   sentMessages     Message[]
   expensesPaid     Expense[]          @relation("ExpensePaidBy")
   expenseSplits    ExpenseSplit[]     @relation("ExpenseSplitUser")
+  reviewsGiven     Review[]           @relation("ReviewReviewer")
+  reviewsReceived  Review[]           @relation("ReviewReviewee")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -131,9 +133,14 @@ model TrustScoreEvent {
   reason         String
   resultingScore Int
   sourceReviewId String?
+  // Plain column, no FK relation (same precedent as sourceReviewId) — lets
+  // the per-trip anti-gaming cap sum prior deltas for (userId, tripId)
+  // without needing a formal Trip relation here.
+  tripId         String?
   createdAt      DateTime @default(now())
 
   @@index([userId, createdAt])
+  @@index([tripId, userId])
 }
 
 // ---------- Trips & membership ----------
@@ -172,6 +179,7 @@ model Trip {
   memberships TripMembership[]
   chatRoom    ChatRoom?
   expenses    Expense[]
+  reviews     Review[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -300,6 +308,37 @@ model ExpenseSplit {
   settledAt DateTime?
 
   @@unique([expenseId, userId])
+}
+
+// ---------- Reviews & trust ----------
+
+// One row per (trip, reviewer, reviewee) pair, only submittable once the
+// trip is COMPLETED (BLUEPRINT §05). `processedAt` marks when the
+// trust-score delta was actually applied — not at submission, but once
+// the blind window resolves (both sides have reviewed each other, or 14
+// days pass), so neither the score movement nor the content leaks early
+// and lets one side anchor or retaliate against the other.
+model Review {
+  id         String @id @default(cuid())
+  tripId     String
+  trip       Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  reviewerId String
+  reviewer   User   @relation("ReviewReviewer", fields: [reviewerId], references: [id])
+  revieweeId String
+  reviewee   User   @relation("ReviewReviewee", fields: [revieweeId], references: [id])
+
+  reliability   Int
+  friendliness  Int
+  communication Int
+  cleanliness   Int
+  comment       String?
+
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@unique([tripId, reviewerId, revieweeId])
+  @@index([tripId])
+  @@index([revieweeId])
 }
 
 // ---------- Safety ----------

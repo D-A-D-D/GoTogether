@@ -420,4 +420,24 @@ export class TripsService {
     }
     return trip;
   }
+
+  /**
+   * The gate reviews wait on (BLUEPRINT §05: "opens only when
+   * Trip.status = completed"). Host-only, and only once the trip has
+   * actually happened — no scheduled job flips this automatically yet
+   * (see docs/IDEAS.md), so it's an explicit action for now.
+   */
+  async complete(tripId: string, hostUserId: string) {
+    const trip = await this.assertIsHost(tripId, hostUserId);
+    if (trip.status === TripStatus.COMPLETED) {
+      throw new ConflictException('This trip is already marked completed');
+    }
+    if (trip.status === TripStatus.CANCELLED || trip.status === TripStatus.DRAFT) {
+      throw new BadRequestException(`A trip that's ${trip.status.toLowerCase()} can't be completed`);
+    }
+    if (new Date() < trip.endDate) {
+      throw new BadRequestException("This trip can't be marked complete before its end date");
+    }
+    return this.prisma.trip.update({ where: { id: tripId }, data: { status: TripStatus.COMPLETED } });
+  }
 }
