@@ -13,15 +13,19 @@ export default function Home() {
         <p className="font-mono text-xs uppercase tracking-widest text-accent">Welcome back</p>
         <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">Hey, {user?.name}.</h1>
         <p className="max-w-md text-base text-foreground/70">
-          Trip discovery, chat, and expenses are still on the way — for now, your profile is the
-          one real thing here.
+          Chat and expenses are still on the way — discovery, hosting, and your trips are real now.
         </p>
-        <Link
-          href="/profile"
-          className="rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-background hover:opacity-90"
-        >
-          Go to your profile
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/trips/discover"
+            className="rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-background hover:opacity-90"
+          >
+            Discover trips
+          </Link>
+          <Link href="/trips/mine" className="text-sm text-foreground/70 hover:text-foreground">
+            Your trips
+          </Link>
+        </div>
       </main>
     );
   }

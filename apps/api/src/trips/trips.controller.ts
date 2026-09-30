@@ -21,6 +21,11 @@ export class TripsController {
     return this.tripsService.listHosted(user.userId);
   }
 
+  @Get('mine')
+  listMine(@CurrentUser() user: RequestUser) {
+    return this.tripsService.listMine(user.userId);
+  }
+
   @Get('discover')
   discover(@CurrentUser() user: RequestUser, @Query() dto: DiscoverTripsDto) {
     return this.tripsService.discover(user.userId, dto);

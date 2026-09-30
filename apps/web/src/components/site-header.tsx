@@ -23,6 +23,12 @@ export function SiteHeader() {
         <nav className="flex items-center gap-5 text-sm">
           {status === 'authenticated' && (
             <>
+              <Link href="/trips/discover" className="text-foreground/70 hover:text-foreground">
+                Discover
+              </Link>
+              <Link href="/trips/mine" className="text-foreground/70 hover:text-foreground">
+                My trips
+              </Link>
               <Link href="/profile" className="text-foreground/70 hover:text-foreground">
                 {user?.name}
               </Link>

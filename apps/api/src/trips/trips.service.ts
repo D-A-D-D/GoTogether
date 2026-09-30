@@ -144,6 +144,24 @@ export class TripsService {
     });
   }
 
+  /**
+   * Every trip this user has any relationship to — hosting (role=HOST is
+   * just a TripMembership row like any other, auto-created at trip
+   * creation) and every trip they've requested or joined, at any status.
+   * A list view, so excludeTags is left out entirely rather than deciding
+   * per-row whether this viewer is the host — the trip detail page
+   * (findById) is where that per-viewer privacy check actually lives.
+   */
+  async listMine(userId: string) {
+    return this.prisma.tripMembership.findMany({
+      where: { userId },
+      include: {
+        trip: { include: { includeTags: true, host: { select: HOST_SELECT } } },
+      },
+      orderBy: { requestedAt: 'desc' },
+    });
+  }
+
   async discover(userId: string, dto: DiscoverTripsDto) {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },

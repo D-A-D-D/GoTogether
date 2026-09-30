@@ -144,3 +144,141 @@ export function updateMe(data: {
 export function getTags() {
   return apiFetch<Tag[]>('/tags');
 }
+
+// ---------- Trips ----------
+
+export type TripStatus = 'DRAFT' | 'OPEN' | 'FULL' | 'ONGOING' | 'COMPLETED' | 'CANCELLED';
+export type TripVisibility = 'PUBLIC' | 'UNLISTED';
+export type MembershipRole = 'HOST' | 'MEMBER';
+export type MembershipStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'LEFT' | 'REMOVED';
+
+export interface TripHost {
+  id: string;
+  name: string;
+  trustScore: number;
+  homeCity: string | null;
+}
+
+export interface Trip {
+  id: string;
+  hostId: string;
+  title: string;
+  description: string | null;
+  destination: string;
+  startDate: string;
+  endDate: string;
+  flexibleDates: boolean;
+  budgetMin: number;
+  budgetMax: number;
+  capacity: number;
+  tripType: string | null;
+  status: TripStatus;
+  visibility: TripVisibility;
+  coverPhotoUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+  includeTags: Tag[];
+  // Present only when the caller is the host — BLUEPRINT §01/§09.
+  excludeTags?: Tag[];
+  host: TripHost;
+}
+
+export interface DiscoveredTrip extends Trip {
+  matchScore: number;
+}
+
+export interface TripDetail extends Trip {
+  approvedCount: number;
+  myMembership: { status: MembershipStatus; role: MembershipRole } | null;
+}
+
+export interface TripMembership {
+  id: string;
+  tripId: string;
+  userId: string;
+  role: MembershipRole;
+  status: MembershipStatus;
+  requestedAt: string;
+  respondedAt: string | null;
+  leftAt: string | null;
+}
+
+export interface MyTripMembership extends TripMembership {
+  trip: Trip;
+}
+
+export interface TripRequest extends TripMembership {
+  user: {
+    id: string;
+    name: string;
+    bio: string | null;
+    homeCity: string | null;
+    trustScore: number;
+    preferenceTags: Tag[];
+  };
+}
+
+export interface CreateTripInput {
+  title: string;
+  description?: string;
+  destination: string;
+  startDate: string;
+  endDate: string;
+  flexibleDates?: boolean;
+  budgetMin: number;
+  budgetMax: number;
+  capacity: number;
+  includeTagIds?: string[];
+  excludeTagIds?: string[];
+  tripType?: string;
+  visibility?: TripVisibility;
+}
+
+export function createTrip(data: CreateTripInput) {
+  return apiFetch<Trip>('/trips', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export interface DiscoverParams {
+  budgetMin?: number;
+  budgetMax?: number;
+  startDate?: string;
+  endDate?: string;
+  destination?: string;
+  limit?: number;
+}
+
+export function discoverTrips(params: DiscoverParams = {}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') query.set(key, String(value));
+  }
+  const qs = query.toString();
+  return apiFetch<DiscoveredTrip[]>(`/trips/discover${qs ? `?${qs}` : ''}`);
+}
+
+export function getTrip(id: string) {
+  return apiFetch<TripDetail>(`/trips/${id}`);
+}
+
+export function listMyTrips() {
+  return apiFetch<MyTripMembership[]>('/trips/mine');
+}
+
+export function requestToJoinTrip(tripId: string) {
+  return apiFetch<TripMembership>(`/trips/${tripId}/requests`, { method: 'POST' });
+}
+
+export function listTripRequests(tripId: string) {
+  return apiFetch<TripRequest[]>(`/trips/${tripId}/requests`);
+}
+
+export function respondToTripRequest(tripId: string, membershipId: string, decision: 'APPROVED' | 'REJECTED') {
+  return apiFetch<TripMembership>(`/trips/${tripId}/requests/${membershipId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ decision }),
+  });
+}
+
+export function leaveTrip(tripId: string) {
+  return apiFetch<unknown>(`/trips/${tripId}/leave`, { method: 'POST' });
+}
