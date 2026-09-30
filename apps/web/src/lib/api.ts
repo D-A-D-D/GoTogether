@@ -47,6 +47,11 @@ export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
+/** For the one caller that can't just go through apiFetch — the Socket.io handshake needs the raw token. */
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
 /** AuthProvider registers a callback here to react to a session that can no longer be refreshed. */
 export function onSessionExpired(callback: () => void): void {
   onExpired = callback;
@@ -281,4 +286,22 @@ export function respondToTripRequest(tripId: string, membershipId: string, decis
 
 export function leaveTrip(tripId: string) {
   return apiFetch<unknown>(`/trips/${tripId}/leave`, { method: 'POST' });
+}
+
+// ---------- Chat ----------
+
+export interface ChatMessage {
+  id: string;
+  roomId: string;
+  senderId: string;
+  content: string;
+  createdAt: string;
+  sender: { id: string; name: string };
+}
+
+/** Oldest-first within the page. `before` (a message id) pages further back in history. */
+export function listMessages(tripId: string, before?: string, limit = 50) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (before) query.set('before', before);
+  return apiFetch<ChatMessage[]>(`/trips/${tripId}/messages?${query.toString()}`);
 }

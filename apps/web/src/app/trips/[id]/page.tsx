@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
@@ -111,11 +112,25 @@ export default function TripDetailPage() {
     );
   }
 
+  const canChat = isHost || trip.myMembership?.status === 'APPROVED';
+
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
-      <p className="font-mono text-xs uppercase tracking-widest text-accent">{trip.status}</p>
-      <h1 className="mt-1 text-2xl font-semibold tracking-tight">{trip.title}</h1>
-      <p className="mt-1 text-foreground/70">{trip.destination}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-widest text-accent">{trip.status}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{trip.title}</h1>
+          <p className="mt-1 text-foreground/70">{trip.destination}</p>
+        </div>
+        {canChat && (
+          <Link
+            href={`/trips/${trip.id}/chat`}
+            className="shrink-0 rounded-full border border-line px-4 py-2 text-sm text-foreground/70 hover:border-accent/50 hover:text-foreground"
+          >
+            Open chat
+          </Link>
+        )}
+      </div>
 
       {trip.description && <p className="mt-4 text-sm text-foreground/70">{trip.description}</p>}
 
