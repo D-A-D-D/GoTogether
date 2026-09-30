@@ -3,13 +3,21 @@
 :root {
   --background: #F2F3EE;
   --foreground: #1B231F;
+  --surface: #FBFBF8;
   --accent: #1F6F6B;
+  --accent-2: #B4772B;
+  --danger: #9C3B2E;
+  --line: rgba(27, 35, 31, 0.14);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
   --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-danger: var(--danger);
+  --color-line: var(--line);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -18,7 +26,11 @@
   :root {
     --background: #10181A;
     --foreground: #E9EDE9;
+    --surface: #16201F;
     --accent: #55B8B0;
+    --accent-2: #DDA35C;
+    --danger: #E2897A;
+    --line: rgba(233, 237, 233, 0.14);
   }
 }
 

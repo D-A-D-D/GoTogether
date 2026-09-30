@@ -1,18 +1,54 @@
-import { HealthStatus } from "@/components/health-status";
+'use client';
+
+import Link from 'next/link';
+import { useAuth } from '@/lib/auth-context';
+import { HealthStatus } from '@/components/health-status';
 
 export default function Home() {
+  const { user, status } = useAuth();
+
+  if (status === 'authenticated') {
+    return (
+      <main className="flex-1 flex flex-col items-center justify-center gap-6 px-6 py-24 text-center">
+        <p className="font-mono text-xs uppercase tracking-widest text-accent">Welcome back</p>
+        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">Hey, {user?.name}.</h1>
+        <p className="max-w-md text-base text-foreground/70">
+          Trip discovery, chat, and expenses are still on the way — for now, your profile is the
+          one real thing here.
+        </p>
+        <Link
+          href="/profile"
+          className="rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-background hover:opacity-90"
+        >
+          Go to your profile
+        </Link>
+      </main>
+    );
+  }
+
   return (
     <main className="flex-1 flex flex-col items-center justify-center gap-6 px-6 py-24 text-center">
-      <p className="font-mono text-xs uppercase tracking-widest text-accent">
-        GoTogether — Phase 0
-      </p>
+      <p className="font-mono text-xs uppercase tracking-widest text-accent">GoTogether</p>
       <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
         Travel together, not alone.
       </h1>
       <p className="max-w-md text-base text-foreground/70">
-        Profiles, matching, trips, and trust scores are on the way. This is
-        the app shell — installable, and talking to the API below.
+        Find compatible travel companions, host or join trips, and build trust as you go — one
+        real trip at a time.
       </p>
+      {status === 'unauthenticated' && (
+        <div className="flex items-center gap-3">
+          <Link
+            href="/register"
+            className="rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-background hover:opacity-90"
+          >
+            Get started
+          </Link>
+          <Link href="/login" className="text-sm text-foreground/70 hover:text-foreground">
+            Log in
+          </Link>
+        </div>
+      )}
       <HealthStatus />
     </main>
   );
