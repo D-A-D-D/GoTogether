@@ -46,6 +46,11 @@ export class TripsController {
     return this.tripsService.listRequests(id, user.userId);
   }
 
+  @Get(':id/members')
+  listMembers(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.tripsService.listMembers(id, user.userId);
+  }
+
   @Patch(':id/requests/:membershipId')
   respondToRequest(
     @CurrentUser() user: RequestUser,

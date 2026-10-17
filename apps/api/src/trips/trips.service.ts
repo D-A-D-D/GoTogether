@@ -318,6 +318,30 @@ export class TripsService {
     });
   }
 
+  /**
+   * Who's on the trip. Approved members only, and only visible to other
+   * approved members — a pending requester or an outsider shouldn't be able
+   * to enumerate the group. Exposes just name and trust score.
+   */
+  async listMembers(tripId: string, requesterId: string) {
+    const own = await this.prisma.tripMembership.findUnique({
+      where: { tripId_userId: { tripId, userId: requesterId } },
+    });
+    if (!own || own.status !== MembershipStatus.APPROVED) {
+      throw new ForbiddenException('Only approved trip members can see who else is on the trip');
+    }
+    return this.prisma.tripMembership.findMany({
+      where: { tripId, status: MembershipStatus.APPROVED },
+      select: {
+        id: true,
+        userId: true,
+        role: true,
+        user: { select: { id: true, name: true, trustScore: true } },
+      },
+      orderBy: { requestedAt: 'asc' },
+    });
+  }
+
   async respondToRequest(
     tripId: string,
     membershipId: string,

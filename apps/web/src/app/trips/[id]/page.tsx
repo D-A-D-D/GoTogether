@@ -112,7 +112,7 @@ export default function TripDetailPage() {
     );
   }
 
-  const canChat = isHost || trip.myMembership?.status === 'APPROVED';
+  const isApprovedMember = isHost || trip.myMembership?.status === 'APPROVED';
 
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
@@ -122,13 +122,21 @@ export default function TripDetailPage() {
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{trip.title}</h1>
           <p className="mt-1 text-foreground/70">{trip.destination}</p>
         </div>
-        {canChat && (
-          <Link
-            href={`/trips/${trip.id}/chat`}
-            className="shrink-0 rounded-full border border-line px-4 py-2 text-sm text-foreground/70 hover:border-accent/50 hover:text-foreground"
-          >
-            Open chat
-          </Link>
+        {isApprovedMember && (
+          <div className="flex shrink-0 gap-2">
+            <Link
+              href={`/trips/${trip.id}/expenses`}
+              className="rounded-full border border-line px-4 py-2 text-sm text-foreground/70 hover:border-accent/50 hover:text-foreground"
+            >
+              Expenses
+            </Link>
+            <Link
+              href={`/trips/${trip.id}/chat`}
+              className="rounded-full border border-line px-4 py-2 text-sm text-foreground/70 hover:border-accent/50 hover:text-foreground"
+            >
+              Open chat
+            </Link>
+          </div>
         )}
       </div>
 

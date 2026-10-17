@@ -323,3 +323,82 @@ export function listMessages(tripId: string, before?: string, limit = 50) {
   if (before) query.set('before', before);
   return apiFetch<ChatMessage[]>(`/trips/${tripId}/messages?${query.toString()}`);
 }
+
+// ---------- Members & expenses ----------
+
+export interface TripMember {
+  id: string;
+  userId: string;
+  role: MembershipRole;
+  user: { id: string; name: string; trustScore: number };
+}
+
+/** Approved members only; the API rejects anyone who isn't one. */
+export function listTripMembers(tripId: string) {
+  return apiFetch<TripMember[]>(`/trips/${tripId}/members`);
+}
+
+export interface ExpenseUser {
+  id: string;
+  name: string;
+  trustScore: number;
+}
+
+export interface ExpenseSplit {
+  id: string;
+  expenseId: string;
+  userId: string;
+  amount: number;
+  settled: boolean;
+  settledAt: string | null;
+  user: ExpenseUser;
+}
+
+/** Amounts are whole units of the single launch currency — no minor units. */
+export interface Expense {
+  id: string;
+  tripId: string;
+  paidById: string;
+  description: string;
+  amount: number;
+  category: string | null;
+  createdAt: string;
+  paidBy: ExpenseUser;
+  splits: ExpenseSplit[];
+}
+
+export interface Balances {
+  /** Positive `netAmount`: they owe you. Negative: you owe them. */
+  balances: { counterpart: ExpenseUser; netAmount: number }[];
+  totalOwedToYou: number;
+  totalYouOwe: number;
+}
+
+export interface CreateExpenseInput {
+  description: string;
+  amount: number;
+  paidById?: string;
+  category?: string;
+  /** Equal split across these people. Ignored when `splits` is given. */
+  splitUserIds?: string[];
+  /** Exact per-person amounts; must sum to `amount`. */
+  splits?: { userId: string; amount: number }[];
+}
+
+export function listExpenses(tripId: string) {
+  return apiFetch<Expense[]>(`/trips/${tripId}/expenses`);
+}
+
+export function createExpense(tripId: string, input: CreateExpenseInput) {
+  return apiFetch<Expense>(`/trips/${tripId}/expenses`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function getBalances(tripId: string) {
+  return apiFetch<Balances>(`/trips/${tripId}/balances`);
+}
+
+export function settleSplit(tripId: string, expenseId: string, splitId: string) {
+  return apiFetch<ExpenseSplit>(`/trips/${tripId}/expenses/${expenseId}/splits/${splitId}/settle`, {
+    method: 'PATCH',
+  });
+}
