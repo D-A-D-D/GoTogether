@@ -78,8 +78,26 @@ async function readErrorMessage(res: Response): Promise<string> {
   }
 }
 
-/** Uses the httpOnly refresh cookie (path-scoped to /auth) — never touches JS-readable storage. */
-export async function refreshSession(): Promise<PublicUser | null> {
+let inFlightRefresh: Promise<PublicUser | null> | null = null;
+
+/**
+ * Uses the httpOnly refresh cookie (path-scoped to /auth) — never touches JS-readable storage.
+ *
+ * Concurrent callers share one request. The refresh token rotates on use, so
+ * a second request carrying the same cookie either orphans a token or loses
+ * the race and gets a 401 — and a 401 here signs the user out of a session
+ * that was perfectly good. Parallel callers are normal: React Strict Mode
+ * double-runs the mount effect, and a page that fires two requests with an
+ * expired access token gets two 401s at once.
+ */
+export function refreshSession(): Promise<PublicUser | null> {
+  inFlightRefresh ??= requestRefresh().finally(() => {
+    inFlightRefresh = null;
+  });
+  return inFlightRefresh;
+}
+
+async function requestRefresh(): Promise<PublicUser | null> {
   const res = await fetch(`${API_URL}/auth/refresh`, { method: 'POST', credentials: 'include' });
   if (!res.ok) return null;
   const data = (await res.json()) as AuthResponse;

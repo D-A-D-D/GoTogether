@@ -174,7 +174,7 @@ Module boundaries inside Core Modules are the seams to cut along if Chat or Matc
 
 | Layer | Choice | Why |
 |---|---|---|
-| Frontend | Next.js + TypeScript + Tailwind | PWA via Workbox; SSR for crawlable/shareable public trip pages |
+| Frontend | Next.js + TypeScript + Tailwind | PWA via a small hand-rolled service worker (not Workbox — see below); SSR for crawlable/shareable public trip pages |
 | Backend | NestJS (TypeScript) | Modular monolith maps to NestJS modules; shared types w/ frontend |
 | Primary DB | PostgreSQL + PostGIS | Relational integrity for memberships/constraints; geo queries |
 | Cache/pub-sub | Redis | Sessions, hot reads, chat fanout backplane |
@@ -184,6 +184,10 @@ Module boundaries inside Core Modules are the seams to cut along if Chat or Matc
 | Auth | JWT + rotating refresh, OAuth (Google/Apple) | httpOnly cookies on web to reduce XSS token theft |
 | Infra | Docker → Fly.io/Railway (MVP) → ECS/EKS (scale) | Terraform once >1 environment |
 | Observability | Sentry + OpenTelemetry/Grafana | Audit trail matters for a trust-scored marketplace |
+
+**Service worker policy** (settled in implementation, 2026-10-17): the worker is hand-rolled and deliberately narrow — Workbox's route-matching is more machinery than an app-shell cache needs, and the first version's blanket "cache every GET" approach shows how easily a broad rule goes wrong. It ignores every cross-origin request (the API is on its own origin and must always hit the network, so live data is never served stale), caches only content-hashed `/_next/static/` and `/icons/` assets cache-first, and handles page navigations network-first with the cached shell as the offline fallback. It is registered in production only; in development it is unregistered on load. Workbox, or a bespoke background-sync queue, becomes worth reconsidering when the IndexedDB offline queue (§ architecture diagram) is actually built.
+
+**Auth session handling** (client): the access token lives only in memory; the httpOnly refresh cookie is the one thing that survives a reload. The refresh token rotates on every use, so concurrent refreshes from one tab are collapsed into a single request (single-flight) — two requests carrying the same cookie would race and could sign out a valid session.
 
 ## 12 — Delivery roadmap
 
@@ -205,3 +209,4 @@ Tracked live in [ROADMAP.md](ROADMAP.md#open-decisions). Summary:
 4. **In-app payments** — default defer; licensing decision, not a sprint.
 5. **Launch geography & currency scope** — not yet defaulted; changes the data model more than anything else here.
 6. **Native app wrapper** — default PWA-only through Phase 3; iOS Web Push needs 16.4+ and manual "Add to Home Screen."
+7. **Refresh-token rotation grace window** — default strict (a rotated token is rejected immediately). A refresh whose response never reaches the browser leaves the cookie holding a revoked token and forces a re-login; a short grace window fixes that at the cost of a few seconds of replay tolerance. A security-policy tradeoff, so it's an explicit call rather than a quiet change.

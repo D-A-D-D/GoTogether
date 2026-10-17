@@ -1,17 +1,13 @@
-// Minimal app-shell service worker (Phase 0 — see docs/ROADMAP.md).
-// Caches the static shell so the app opens offline; everything else
-// (API calls, chat, etc.) is deliberately left to hit the network as
-// those pieces get built — this is installability + a shell cache, not
-// a full offline strategy yet.
+// App-shell service worker. Deliberately narrow: it never touches the API.
+//
+// History worth knowing: the first version cache-first'd *every* GET. The
+// API lives on a different origin with paths like /users/me and
+// /trips/discover, so its `/api` exemption never matched anything — every
+// API read would have been cached forever and served stale. This version
+// ignores cross-origin requests outright and only handles three same-origin
+// cases, each with the strategy that's actually safe for it.
 
-// Bump this whenever a shell asset changes (manifest fields, icons, the
-// root page markup) — cache-first means a returning visitor keeps seeing
-// whatever was cached under the OLD name until `activate` clears it below;
-// a content change with no version bump is invisible to them. Found this
-// firsthand while testing manifest changes against an already-registered
-// SW in this same session — the server was serving the new file the whole
-// time, the browser's Cache Storage just never asked it for a fresh copy.
-const CACHE_NAME = 'gotogether-shell-v2';
+const CACHE_NAME = 'gotogether-shell-v3';
 const SHELL_ASSETS = ['/', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
@@ -34,18 +30,32 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-  // Never cache API responses — those need to stay live.
-  if (url.pathname.startsWith('/api')) return;
+  // The API (and anything else cross-origin) must always hit the network.
+  if (url.origin !== self.location.origin) return;
 
-  event.respondWith(
-    caches.match(request).then(
-      (cached) =>
-        cached ||
-        fetch(request).then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          return response;
-        }),
-    ),
-  );
+  // Content-hashed build output and icons never change under the same URL,
+  // so cache-first can't go stale. (Only true for production builds — dev
+  // chunk names aren't unique per change, which is why the worker is only
+  // registered in production; see register-service-worker.tsx.)
+  if (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icons/')) {
+    event.respondWith(
+      caches.match(request).then(
+        (cached) =>
+          cached ||
+          fetch(request).then((response) => {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+            return response;
+          }),
+      ),
+    );
+    return;
+  }
+
+  // Page loads: network first so a deploy shows up immediately; the cached
+  // shell is only the offline fallback.
+  if (request.mode === 'navigate') {
+    event.respondWith(fetch(request).catch(() => caches.match('/')));
+  }
+  // Everything else: untouched.
 });
