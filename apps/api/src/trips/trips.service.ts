@@ -10,6 +10,7 @@ import { MatchingService } from './matching.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { DiscoverTripsDto } from './dto/discover-trips.dto.js';
+import { MIN_APPROVED_MEMBERS_TO_COMPLETE, hasTripEnded, startsInThePast } from './trip-rules.js';
 import {
   MembershipRole,
   MembershipStatus,
@@ -60,6 +61,9 @@ export class TripsService {
   async create(hostId: string, dto: CreateTripDto) {
     if (new Date(dto.endDate) < new Date(dto.startDate)) {
       throw new BadRequestException('endDate must not be before startDate');
+    }
+    if (startsInThePast(new Date(dto.startDate), new Date())) {
+      throw new BadRequestException("A trip can't start in the past — pick today or a later date");
     }
     if (dto.budgetMax < dto.budgetMin) {
       throw new BadRequestException('budgetMax must not be less than budgetMin');
@@ -486,8 +490,9 @@ export class TripsService {
   /**
    * The gate reviews wait on (BLUEPRINT §05: "opens only when
    * Trip.status = completed"). Host-only, and only once the trip has
-   * actually happened — no scheduled job flips this automatically yet
-   * (see docs/IDEAS.md), so it's an explicit action for now.
+   * actually happened — its last day is over and someone other than the
+   * host joined (see trip-rules.ts for why). No scheduled job flips this
+   * automatically yet (see docs/IDEAS.md), so it's an explicit action.
    */
   async complete(tripId: string, hostUserId: string) {
     const trip = await this.assertIsHost(tripId, hostUserId);
@@ -497,8 +502,16 @@ export class TripsService {
     if (trip.status === TripStatus.CANCELLED || trip.status === TripStatus.DRAFT) {
       throw new BadRequestException(`A trip that's ${trip.status.toLowerCase()} can't be completed`);
     }
-    if (new Date() < trip.endDate) {
-      throw new BadRequestException("This trip can't be marked complete before its end date");
+    if (!hasTripEnded(trip.endDate, new Date())) {
+      throw new BadRequestException("This trip can't be marked complete until its last day is over");
+    }
+    const approvedCount = await this.prisma.tripMembership.count({
+      where: { tripId, status: MembershipStatus.APPROVED },
+    });
+    if (approvedCount < MIN_APPROVED_MEMBERS_TO_COMPLETE) {
+      throw new BadRequestException(
+        'A trip needs at least one other approved member before it can be marked complete — reviews are between travellers',
+      );
     }
     return this.prisma.trip.update({ where: { id: tripId }, data: { status: TripStatus.COMPLETED } });
   }

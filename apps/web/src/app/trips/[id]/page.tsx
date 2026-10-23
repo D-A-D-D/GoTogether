@@ -18,6 +18,11 @@ import {
 } from '@/lib/api';
 import { ErrorText, PrimaryButton } from '@/components/form-controls';
 
+// Mirror the API's rules in apps/api/src/trips/trip-rules.ts, which are the
+// authoritative ones — these only decide what to offer, never what's allowed.
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MIN_APPROVED_MEMBERS_TO_COMPLETE = 2;
+
 const PILL_LINK =
   'rounded-full border border-line px-4 py-2 text-sm text-foreground/70 hover:border-accent/50 hover:text-foreground';
 
@@ -143,7 +148,10 @@ export default function TripDetailPage() {
     trip.status === 'COMPLETED' &&
     (isApprovedMember || trip.myMembership?.status === 'LEFT');
   const canMarkComplete = isHost && (trip.status === 'OPEN' || trip.status === 'FULL' || trip.status === 'ONGOING');
-  const hasEnded = loadedAt !== null && loadedAt >= new Date(trip.endDate).getTime();
+  // endDate is the last day, inclusive: the trip is over once that whole UTC day has passed.
+  const endOfLastDay = (Math.floor(new Date(trip.endDate).getTime() / DAY_MS) + 1) * DAY_MS;
+  const hasEnded = loadedAt !== null && loadedAt >= endOfLastDay;
+  const hasEnoughMembers = trip.approvedCount >= MIN_APPROVED_MEMBERS_TO_COMPLETE;
 
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
@@ -271,7 +279,13 @@ export default function TripDetailPage() {
         <div className="mt-6 rounded-xl border border-line bg-surface p-4">
           {!hasEnded ? (
             <p className="text-sm text-foreground/60">
-              Once the trip ends you can mark it complete, which opens reviews for everyone who went.
+              Once the trip&apos;s last day is over you can mark it complete, which opens reviews for everyone who
+              went.
+            </p>
+          ) : !hasEnoughMembers ? (
+            <p className="text-sm text-foreground/60">
+              This trip has ended, but reviews are between travellers &mdash; it needs at least one other approved
+              member before it can be marked complete.
             </p>
           ) : confirmingComplete ? (
             <div>

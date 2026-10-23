@@ -97,6 +97,7 @@ Weights live in config, not code — the first thing worth A/B testing once ther
 - A reviewer's own trust score weights how much their review moves someone else's — low-trust accounts can't swing scores as hard.
 - Cap total movement per trip regardless of group size.
 - Reviews from trips shorter than a floor duration (e.g. under one night) count at reduced weight.
+- **A trip must actually have happened before it can open reviews.** A trip can't start in the past, can't be marked complete until its last day (UTC, inclusive) is over, and needs at least one other approved member besides the host. Without these, someone could create an already-ended trip, approve friends, complete it, and trade five-star reviews with no trip at all (found while testing, 2026-10-23). This closes the no-trip version only — people who run many *real* trips together are still the collusion job's problem, next bullet.
 - Offline job flags small clusters that repeatedly five-star each other across trips (collusion rings) for manual review — needs `TrustScoreEvent` to exist from day one to ever be possible.
 
 ## 06 — Chat & expense splitting
