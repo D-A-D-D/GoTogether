@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import * as api from '@/lib/api';
 import type { PublicUser } from '@/lib/api';
-import { disablePush } from '@/lib/push';
+import { detachPushForLogout, syncPushForUser } from '@/lib/push';
 
 type Status = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -23,6 +23,14 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<PublicUser | null>(null);
   const [status, setStatus] = useState<Status>('loading');
+  const userId = user?.id ?? null;
+
+  // Whenever someone is signed in, reconcile this device's push subscription
+  // with them: drop one that isn't theirs, restore the one they opted into
+  // here. Keyed on the id so a profile edit (a new `user` object) doesn't rerun it.
+  useEffect(() => {
+    if (userId) void syncPushForUser(userId).catch(() => undefined);
+  }, [userId]);
 
   useEffect(() => {
     api.onSessionExpired(() => {
@@ -64,7 +72,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     // First, while the session can still authenticate the request: stop this
     // device receiving the user's notifications once they've logged out.
-    await disablePush().catch(() => undefined);
+    // (Who opted in is remembered, so they get them back quietly on return.)
+    await detachPushForLogout().catch(() => undefined);
     await api.logout().catch(() => undefined);
     setUser(null);
     setStatus('unauthenticated');

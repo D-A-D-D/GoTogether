@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { disablePush, enablePush, getPushStatus, PushPermissionError, type PushStatus } from '@/lib/push';
 import { ErrorText, PrimaryButton } from '@/components/form-controls';
 
 /** Push notifications for this device: whether they're on, and the switch. */
 export function PushSettings() {
+  const { user } = useAuth();
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,10 +28,11 @@ export function PushSettings() {
   }, [refresh]);
 
   async function handleEnable() {
+    if (!user) return;
     setError(null);
     setBusy(true);
     try {
-      await enablePush();
+      await enablePush(user.id);
     } catch (err) {
       if (err instanceof PushPermissionError) {
         // A hard "denied" is explained by the status text itself once
