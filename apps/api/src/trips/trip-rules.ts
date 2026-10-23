@@ -29,6 +29,11 @@ export function startsInThePast(startDate: Date, now: Date): boolean {
   return startDate.getTime() < startOfUtcDay(now).getTime();
 }
 
+/** True when two dates fall on the same UTC day — the granularity the app cares about. */
+export function isSameUtcDay(a: Date, b: Date): boolean {
+  return startOfUtcDay(a).getTime() === startOfUtcDay(b).getTime();
+}
+
 /**
  * `endDate` is the trip's last day, inclusive ("Dec 1 – Dec 10" includes the
  * 10th), so the trip hasn't ended until that whole day has passed. Comparing

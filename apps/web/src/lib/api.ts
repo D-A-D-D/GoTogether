@@ -261,6 +261,22 @@ export function createTrip(data: CreateTripInput) {
   return apiFetch<Trip>('/trips', { method: 'POST', body: JSON.stringify(data) });
 }
 
+/**
+ * Only what's sent changes. An empty string clears `description` / `tripType`,
+ * and a tag list replaces the whole list. Host-only, and only while the trip
+ * is OPEN or FULL.
+ */
+export type UpdateTripInput = Partial<CreateTripInput>;
+
+export function updateTrip(tripId: string, data: UpdateTripInput) {
+  return apiFetch<Trip>(`/trips/${tripId}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+/** Host-only and irreversible: declines pending requests and notifies everyone on the trip. */
+export function cancelTrip(tripId: string) {
+  return apiFetch<Trip>(`/trips/${tripId}/cancel`, { method: 'POST' });
+}
+
 export interface DiscoverParams {
   budgetMin?: number;
   budgetMax?: number;

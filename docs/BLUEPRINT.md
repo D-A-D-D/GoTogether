@@ -62,6 +62,8 @@ Twelve entities in five groups.
 
 Pending *requests* are deliberately left unconstrained — a user can request overlapping trips speculatively; the block bites only at approval time, where the host also gets a clear "conflicts with an approved trip" signal.
 
+**Editing and cancelling a trip** (implemented 2026-10-23) lean on the same machinery. A host can edit an OPEN or FULL trip; if a date change would put an approved member on two trips at once, the database refuses it (the date-sync trigger re-checks every member) and the host gets a clear "one of the approved members is already on another trip then" message — without naming the other trip. Cancelling declines pending requests and *releases every member's date hold* by nulling `TripMembership.period` (the column is nullable and the exclusion constraint ignores nulls); without that, a cancelled trip's approved members would stay blocked from joining anything else that week. Approved members keep their membership, so chat and expenses stay open for settling up. Cancelling is irreversible, and approving a request needs a trip that's still OPEN or FULL.
+
 ## 04 — Matching algorithm
 
 Hard filters remove candidates entirely; a weighted score ranks whoever survives. Only the second stage produces the percentage a user sees.
@@ -97,7 +99,7 @@ Weights live in config, not code — the first thing worth A/B testing once ther
 - A reviewer's own trust score weights how much their review moves someone else's — low-trust accounts can't swing scores as hard.
 - Cap total movement per trip regardless of group size.
 - Reviews from trips shorter than a floor duration (e.g. under one night) count at reduced weight.
-- **A trip must actually have happened before it can open reviews.** A trip can't start in the past, can't be marked complete until its last day (UTC, inclusive) is over, and needs at least one other approved member besides the host. Without these, someone could create an already-ended trip, approve friends, complete it, and trade five-star reviews with no trip at all (found while testing, 2026-10-23). This closes the no-trip version only — people who run many *real* trips together are still the collusion job's problem, next bullet.
+- **A trip must actually have happened before it can open reviews.** A trip can't start in the past, can't be marked complete until its last day (UTC, inclusive) is over, needs at least one other approved member besides the host, and can't take new members once it's completed or cancelled (otherwise a friend who requested earlier could be approved *after* completion and review without having gone). Without these, someone could create an already-ended trip, approve friends, complete it, and trade five-star reviews with no trip at all (found while testing, 2026-10-23). This closes the no-trip version only — people who run many *real* trips together are still the collusion job's problem, next bullet.
 - Offline job flags small clusters that repeatedly five-star each other across trips (collusion rings) for manual review — needs `TrustScoreEvent` to exist from day one to ever be possible.
 
 ## 06 — Chat & expense splitting

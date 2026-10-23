@@ -5,6 +5,7 @@ import { TripsService } from './trips.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { DiscoverTripsDto } from './dto/discover-trips.dto.js';
 import { RespondToRequestDto } from './dto/respond-to-request.dto.js';
+import { UpdateTripDto } from './dto/update-trip.dto.js';
 
 @Controller('trips')
 @UseGuards(JwtAccessGuard)
@@ -73,6 +74,16 @@ export class TripsController {
     @Param('membershipId') membershipId: string,
   ) {
     return this.tripsService.removeMember(id, membershipId, user.userId);
+  }
+
+  @Patch(':id')
+  update(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() dto: UpdateTripDto) {
+    return this.tripsService.update(id, user.userId, dto);
+  }
+
+  @Post(':id/cancel')
+  cancel(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.tripsService.cancel(id, user.userId);
   }
 
   @Post(':id/complete')

@@ -16,6 +16,8 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
 };
 
 function statusFor(m: MyTripMembership) {
+  // A cancelled trip outranks whatever your relationship to it was.
+  if (m.trip.status === 'CANCELLED') return { label: 'Cancelled', className: 'bg-danger/10 text-danger' };
   if (m.role === 'HOST') return STATUS_LABEL.HOST;
   return STATUS_LABEL[m.status] ?? STATUS_LABEL.REQUESTED;
 }

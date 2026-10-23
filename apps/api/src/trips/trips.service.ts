@@ -10,7 +10,8 @@ import { MatchingService } from './matching.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { DiscoverTripsDto } from './dto/discover-trips.dto.js';
-import { MIN_APPROVED_MEMBERS_TO_COMPLETE, hasTripEnded, startsInThePast } from './trip-rules.js';
+import { UpdateTripDto } from './dto/update-trip.dto.js';
+import { MIN_APPROVED_MEMBERS_TO_COMPLETE, hasTripEnded, isSameUtcDay, startOfUtcDay, startsInThePast } from './trip-rules.js';
 import {
   MembershipRole,
   MembershipStatus,
@@ -58,6 +59,28 @@ export class TripsService {
     return rest;
   }
 
+  /** Every tag id must exist, and exclude tags must be STYLE-category (BLUEPRINT §01) — shared by create and update. */
+  private async assertTagsValid(includeTagIds?: string[], excludeTagIds?: string[]): Promise<void> {
+    if (includeTagIds?.length) {
+      const found = await this.prisma.tag.count({ where: { id: { in: includeTagIds } } });
+      if (found !== new Set(includeTagIds).size) {
+        throw new BadRequestException('One or more includeTagIds do not exist');
+      }
+    }
+    if (excludeTagIds?.length) {
+      const excludeTags = await this.prisma.tag.findMany({ where: { id: { in: excludeTagIds } } });
+      if (excludeTags.length !== excludeTagIds.length) {
+        throw new BadRequestException('One or more excludeTagIds do not exist');
+      }
+      const nonStyle = excludeTags.filter((t) => t.category !== TagCategory.STYLE);
+      if (nonStyle.length > 0) {
+        throw new BadRequestException(
+          `Only style tags can be used as exclude tags — identity-based filtering must use tripType instead: ${nonStyle.map((t) => t.name).join(', ')}`,
+        );
+      }
+    }
+  }
+
   async create(hostId: string, dto: CreateTripDto) {
     if (new Date(dto.endDate) < new Date(dto.startDate)) {
       throw new BadRequestException('endDate must not be before startDate');
@@ -69,18 +92,7 @@ export class TripsService {
       throw new BadRequestException('budgetMax must not be less than budgetMin');
     }
 
-    if (dto.excludeTagIds?.length) {
-      const excludeTags = await this.prisma.tag.findMany({ where: { id: { in: dto.excludeTagIds } } });
-      if (excludeTags.length !== dto.excludeTagIds.length) {
-        throw new BadRequestException('One or more excludeTagIds do not exist');
-      }
-      const nonStyle = excludeTags.filter((t) => t.category !== TagCategory.STYLE);
-      if (nonStyle.length > 0) {
-        throw new BadRequestException(
-          `Only style tags can be used as exclude tags — identity-based filtering must use tripType instead: ${nonStyle.map((t) => t.name).join(', ')}`,
-        );
-      }
-    }
+    await this.assertTagsValid(dto.includeTagIds, dto.excludeTagIds);
 
     try {
       return await this.prisma.$transaction(
@@ -375,6 +387,14 @@ export class TripsService {
       return rejected;
     }
 
+    // Rejecting is always fine, but approving needs a trip still taking people.
+    // Without this a host could complete a trip and then approve a friend who
+    // requested earlier — who'd become eligible to review, and be reviewed,
+    // without having been on it (see trip-rules.ts on trust farming).
+    if (trip.status !== TripStatus.OPEN && trip.status !== TripStatus.FULL) {
+      throw new BadRequestException(`A ${trip.status.toLowerCase()} trip can't take new members`);
+    }
+
     const approvedCount = await this.prisma.tripMembership.count({
       where: { tripId, status: MembershipStatus.APPROVED },
     });
@@ -514,5 +534,176 @@ export class TripsService {
       );
     }
     return this.prisma.trip.update({ where: { id: tripId }, data: { status: TripStatus.COMPLETED } });
+  }
+
+  /**
+   * Host edits to a trip that's still open (OPEN or FULL). Only the fields
+   * sent change. The rules that depend on the trip's current state live here:
+   *  - the past-date rules apply only to a date that is actually being
+   *    *changed*, so a host can still fix a description on a trip that has
+   *    already started;
+   *  - capacity can't drop below the people already approved, and the
+   *    OPEN/FULL status follows the new capacity;
+   *  - a date change that would put an approved member on two trips at once
+   *    is refused by the database's overlap constraint (the date-sync trigger
+   *    from the overlap migration re-checks every member), and surfaced as a 409;
+   *  - members are told only about changes they'd plan around.
+   */
+  async update(tripId: string, hostUserId: string, dto: UpdateTripDto) {
+    const trip = await this.assertIsHost(tripId, hostUserId);
+    if (trip.status !== TripStatus.OPEN && trip.status !== TripStatus.FULL) {
+      throw new BadRequestException(`A ${trip.status.toLowerCase()} trip can't be edited`);
+    }
+
+    const now = new Date();
+    // "Changed" is judged by UTC day, so re-sending the same date (the web
+    // form always does) never counts as an edit — or trips the past-date rule.
+    const startChanged = dto.startDate !== undefined && !isSameUtcDay(new Date(dto.startDate), trip.startDate);
+    const endChanged = dto.endDate !== undefined && !isSameUtcDay(new Date(dto.endDate), trip.endDate);
+    const startDate = startChanged ? new Date(dto.startDate as string) : trip.startDate;
+    const endDate = endChanged ? new Date(dto.endDate as string) : trip.endDate;
+
+    if (startChanged && startsInThePast(startDate, now)) {
+      throw new BadRequestException("A trip can't start in the past — pick today or a later date");
+    }
+    if (endChanged && startOfUtcDay(endDate).getTime() < startOfUtcDay(now).getTime()) {
+      throw new BadRequestException("A trip can't end in the past — pick today or a later date");
+    }
+    if (endDate < startDate) {
+      throw new BadRequestException('endDate must not be before startDate');
+    }
+    if ((dto.budgetMax ?? trip.budgetMax) < (dto.budgetMin ?? trip.budgetMin)) {
+      throw new BadRequestException('budgetMax must not be less than budgetMin');
+    }
+
+    let approvedCount: number | undefined;
+    if (dto.capacity !== undefined) {
+      approvedCount = await this.prisma.tripMembership.count({
+        where: { tripId, status: MembershipStatus.APPROVED },
+      });
+      if (dto.capacity < approvedCount) {
+        throw new BadRequestException(
+          `Capacity can't be lower than the ${approvedCount} ${approvedCount === 1 ? 'person' : 'people'} already approved`,
+        );
+      }
+    }
+
+    await this.assertTagsValid(dto.includeTagIds, dto.excludeTagIds);
+
+    const data: Prisma.TripUpdateInput = {};
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.description !== undefined) data.description = dto.description === '' ? null : dto.description;
+    if (dto.destination !== undefined) data.destination = dto.destination;
+    if (startChanged) data.startDate = startDate;
+    if (endChanged) data.endDate = endDate;
+    if (dto.flexibleDates !== undefined) data.flexibleDates = dto.flexibleDates;
+    if (dto.budgetMin !== undefined) data.budgetMin = dto.budgetMin;
+    if (dto.budgetMax !== undefined) data.budgetMax = dto.budgetMax;
+    if (dto.capacity !== undefined && approvedCount !== undefined) {
+      data.capacity = dto.capacity;
+      data.status = approvedCount >= dto.capacity ? TripStatus.FULL : TripStatus.OPEN;
+    }
+    if (dto.tripType !== undefined) data.tripType = dto.tripType === '' ? null : dto.tripType;
+    if (dto.coverPhotoUrl !== undefined) data.coverPhotoUrl = dto.coverPhotoUrl;
+    if (dto.visibility !== undefined) data.visibility = dto.visibility;
+    if (dto.includeTagIds !== undefined) data.includeTags = { set: dto.includeTagIds.map((id) => ({ id })) };
+    if (dto.excludeTagIds !== undefined) data.excludeTags = { set: dto.excludeTagIds.map((id) => ({ id })) };
+
+    const changes: string[] = [];
+    if (startChanged || endChanged) changes.push('dates');
+    if (dto.destination !== undefined && dto.destination !== trip.destination) changes.push('destination');
+    if (
+      (dto.budgetMin !== undefined && dto.budgetMin !== trip.budgetMin) ||
+      (dto.budgetMax !== undefined && dto.budgetMax !== trip.budgetMax)
+    ) {
+      changes.push('budget');
+    }
+
+    let updated;
+    try {
+      updated = await this.prisma.trip.update({
+        where: { id: tripId },
+        data,
+        include: { includeTags: true, excludeTags: true, host: { select: HOST_SELECT } },
+      });
+    } catch (error) {
+      if (isOverlapViolation(error)) {
+        throw new ConflictException(
+          "One of the approved members is already on another trip during those dates, so the trip can't move there",
+        );
+      }
+      throw error;
+    }
+
+    if (changes.length > 0) {
+      const members = await this.prisma.tripMembership.findMany({
+        where: { tripId, status: MembershipStatus.APPROVED, userId: { not: hostUserId } },
+        select: { userId: true },
+      });
+      const what = changes.length > 1 ? `${changes.slice(0, -1).join(', ')} and ${changes[changes.length - 1]}` : changes[0];
+      await this.notifications.notifyUsers(
+        members.map((m) => m.userId),
+        { title: 'Trip updated', body: `"${updated.title}": the ${what} changed`, url: `/trips/${tripId}` },
+      );
+    }
+
+    return this.toPublicTrip(updated, true);
+  }
+
+  /**
+   * Host cancels a trip that's still open. Pending requests are declined, and
+   * every member's date hold is released: an approved membership carries the
+   * trip's date range, and the overlap constraint would otherwise keep
+   * blocking those people from joining anything else that week. (`period` is
+   * nullable and the constraint ignores nulls, so this needs no migration.)
+   * Approved members keep their membership, so chat and expenses stay open —
+   * people may still need to settle up.
+   */
+  async cancel(tripId: string, hostUserId: string) {
+    const trip = await this.assertIsHost(tripId, hostUserId);
+    if (trip.status === TripStatus.CANCELLED) {
+      throw new ConflictException('This trip is already cancelled');
+    }
+    if (trip.status !== TripStatus.OPEN && trip.status !== TripStatus.FULL) {
+      throw new BadRequestException(`A ${trip.status.toLowerCase()} trip can't be cancelled`);
+    }
+
+    const { cancelled, memberIds, requesterIds } = await this.prisma.$transaction(
+      async (tx) => {
+        const members = await tx.tripMembership.findMany({
+          where: { tripId, status: MembershipStatus.APPROVED, userId: { not: hostUserId } },
+          select: { userId: true },
+        });
+        const requesters = await tx.tripMembership.findMany({
+          where: { tripId, status: MembershipStatus.REQUESTED },
+          select: { userId: true },
+        });
+        const cancelled = await tx.trip.update({ where: { id: tripId }, data: { status: TripStatus.CANCELLED } });
+        await tx.tripMembership.updateMany({
+          where: { tripId, status: MembershipStatus.REQUESTED },
+          data: { status: MembershipStatus.REJECTED, respondedAt: new Date() },
+        });
+        await tx.$executeRaw`UPDATE "TripMembership" SET period = NULL WHERE "tripId" = ${tripId}`;
+        return {
+          cancelled,
+          memberIds: members.map((m) => m.userId),
+          requesterIds: requesters.map((r) => r.userId),
+        };
+      },
+      { timeout: 15000 },
+    );
+
+    await this.notifications.notifyUsers(memberIds, {
+      title: 'Trip cancelled',
+      body: `"${trip.title}" was cancelled by the host`,
+      url: `/trips/${tripId}`,
+    });
+    await this.notifications.notifyUsers(requesterIds, {
+      title: 'Request closed',
+      body: `"${trip.title}" was cancelled, so your request is closed`,
+      url: `/trips/${tripId}`,
+    });
+
+    return cancelled;
   }
 }

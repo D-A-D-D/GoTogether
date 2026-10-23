@@ -1,4 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Prisma } from '../generated/prisma/index.js';
 import { TripsService } from './trips.service.js';
 
 // The database is mocked: these cover the rules around creating and
@@ -7,8 +8,8 @@ import { TripsService } from './trips.service.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function makeService(prisma: Record<string, unknown>) {
-  return new TripsService(prisma as never, {} as never, {} as never);
+function makeService(prisma: Record<string, unknown>, notifications: Record<string, unknown> = {}) {
+  return new TripsService(prisma as never, {} as never, notifications as never);
 }
 
 /** A UTC date string like "2026-10-23", `daysFromToday` days from today. */
@@ -109,5 +110,329 @@ describe('TripsService.complete — when a trip may be marked complete', () => {
     const { service, count } = serviceFor(tripEndingOn(utcDate(5)), 1);
     await expect(service.complete('trip-1', 'host-1')).rejects.toThrow(/last day is over/);
     expect(count).not.toHaveBeenCalled();
+  });
+});
+
+describe('TripsService.update — editing an open trip', () => {
+  function harness(
+    tripOverrides: Record<string, unknown> = {},
+    options: { approvedCount?: number; memberIds?: string[]; updateError?: Error } = {},
+  ) {
+    const trip = {
+      id: 'trip-1',
+      hostId: 'host-1',
+      status: 'OPEN',
+      title: 'Spiti',
+      destination: 'Spiti',
+      startDate: new Date(utcDate(30)),
+      endDate: new Date(utcDate(35)),
+      budgetMin: 100,
+      budgetMax: 200,
+      capacity: 4,
+      ...tripOverrides,
+    };
+    const update = options.updateError
+      ? vi.fn().mockRejectedValue(options.updateError)
+      : vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+          ...trip,
+          ...data,
+          includeTags: [],
+          excludeTags: [],
+          host: {},
+        }));
+    const findMany = vi.fn().mockResolvedValue((options.memberIds ?? []).map((userId) => ({ userId })));
+    const count = vi.fn().mockResolvedValue(options.approvedCount ?? 1);
+    const tagCount = vi.fn().mockResolvedValue(1);
+    const notifyUsers = vi.fn().mockResolvedValue(undefined);
+    const service = makeService(
+      {
+        trip: { findUnique: vi.fn().mockResolvedValue(trip), update },
+        tripMembership: { count, findMany },
+        tag: { count: tagCount, findMany: vi.fn() },
+      },
+      { notifyUsers },
+    );
+    return { service, update, findMany, notifyUsers };
+  }
+
+  /** What was written, i.e. the `data` the service handed to prisma.trip.update. */
+  const written = (update: ReturnType<typeof vi.fn>) => update.mock.calls[0][0].data;
+
+  it('is host-only', async () => {
+    const { service } = harness({ hostId: 'someone-else' });
+    await expect(service.update('trip-1', 'host-1', { title: 'x' })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it.each(['COMPLETED', 'CANCELLED'])('refuses a %s trip', async (status) => {
+    const { service, update } = harness({ status });
+    await expect(service.update('trip-1', 'host-1', { title: 'x' })).rejects.toThrow(/can't be edited/);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to move the start into the past', async () => {
+    const { service, update } = harness();
+    await expect(service.update('trip-1', 'host-1', { startDate: utcDate(-1) })).rejects.toThrow(
+      /can't start in the past/,
+    );
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to move the end into the past', async () => {
+    const { service } = harness({ startDate: new Date(utcDate(-5)), endDate: new Date(utcDate(5)) });
+    await expect(service.update('trip-1', 'host-1', { endDate: utcDate(-1) })).rejects.toThrow(
+      /can't end in the past/,
+    );
+  });
+
+  it('refuses an end date before the stored start date', async () => {
+    const { service } = harness(); // starts in 30 days
+    await expect(service.update('trip-1', 'host-1', { endDate: utcDate(10) })).rejects.toThrow(
+      /endDate must not be before startDate/,
+    );
+  });
+
+  it('refuses a budget max below the stored budget min', async () => {
+    const { service } = harness();
+    await expect(service.update('trip-1', 'host-1', { budgetMax: 50 })).rejects.toThrow(/budgetMax/);
+  });
+
+  it('lets a trip that has already started have its description fixed, dates untouched', async () => {
+    const { service, update } = harness({ startDate: new Date(utcDate(-5)), endDate: new Date(utcDate(5)) });
+    await service.update('trip-1', 'host-1', { description: 'Updated plan' });
+    expect(written(update)).toEqual({ description: 'Updated plan' });
+  });
+
+  it('does not treat re-sending the same dates as an edit, even on a trip underway', async () => {
+    const { service, update } = harness({ startDate: new Date(utcDate(-5)), endDate: new Date(utcDate(5)) });
+    await service.update('trip-1', 'host-1', { startDate: utcDate(-5), endDate: utcDate(5), title: 'New title' });
+    expect(written(update)).toEqual({ title: 'New title' });
+  });
+
+  it('does not treat a different time on the same UTC day as a change', async () => {
+    const { service, update } = harness({ startDate: new Date(`${utcDate(30)}T08:00:00Z`) });
+    await service.update('trip-1', 'host-1', { startDate: utcDate(30), title: 'x' });
+    expect(written(update)).toEqual({ title: 'x' });
+  });
+
+  it('writes a genuine date change', async () => {
+    const { service, update } = harness();
+    await service.update('trip-1', 'host-1', { startDate: utcDate(40), endDate: utcDate(45) });
+    expect(written(update).startDate).toEqual(new Date(utcDate(40)));
+    expect(written(update).endDate).toEqual(new Date(utcDate(45)));
+  });
+
+  it('refuses a capacity below the people already approved', async () => {
+    const { service, update } = harness({}, { approvedCount: 3 });
+    await expect(service.update('trip-1', 'host-1', { capacity: 2 })).rejects.toThrow(
+      /lower than the 3 people already approved/,
+    );
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('marks an open trip FULL when the new capacity equals the approved count', async () => {
+    const { service, update } = harness({ status: 'OPEN' }, { approvedCount: 3 });
+    await service.update('trip-1', 'host-1', { capacity: 3 });
+    expect(written(update)).toEqual({ capacity: 3, status: 'FULL' });
+  });
+
+  it('reopens a FULL trip when capacity is raised', async () => {
+    const { service, update } = harness({ status: 'FULL', capacity: 3 }, { approvedCount: 3 });
+    await service.update('trip-1', 'host-1', { capacity: 5 });
+    expect(written(update)).toEqual({ capacity: 5, status: 'OPEN' });
+  });
+
+  it('clears the description and trip type when sent as empty strings', async () => {
+    const { service, update } = harness();
+    await service.update('trip-1', 'host-1', { description: '', tripType: '' });
+    expect(written(update)).toEqual({ description: null, tripType: null });
+  });
+
+  it('replaces a tag list only when one is sent', async () => {
+    const { service, update } = harness();
+    await service.update('trip-1', 'host-1', { includeTagIds: ['tag-1'] });
+    expect(written(update)).toEqual({ includeTags: { set: [{ id: 'tag-1' }] } });
+  });
+
+  it("reports an approved member's clashing trip as a 409 rather than a server error", async () => {
+    const overlap = new Prisma.PrismaClientUnknownRequestError('violates exclusion constraint "trip_membership_no_overlap"', {
+      clientVersion: 'test',
+    });
+    const { service } = harness({}, { updateError: overlap });
+    await expect(service.update('trip-1', 'host-1', { startDate: utcDate(40), endDate: utcDate(45) })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('lets any other database error through untouched', async () => {
+    const { service } = harness({}, { updateError: new Error('connection lost') });
+    await expect(service.update('trip-1', 'host-1', { title: 'x' })).rejects.toThrow('connection lost');
+  });
+
+  it('tells the approved members (not the host) about changes they would plan around', async () => {
+    const { service, findMany, notifyUsers } = harness({}, { memberIds: ['m1', 'm2'] });
+    await service.update('trip-1', 'host-1', { destination: 'Leh', budgetMax: 300 });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tripId: 'trip-1', status: 'APPROVED', userId: { not: 'host-1' } } }),
+    );
+    expect(notifyUsers).toHaveBeenCalledTimes(1);
+    const [recipients, payload] = notifyUsers.mock.calls[0];
+    expect(recipients).toEqual(['m1', 'm2']);
+    expect(payload.body).toContain('destination and budget');
+    expect(payload.url).toBe('/trips/trip-1');
+  });
+
+  it('says "dates" when the dates move', async () => {
+    const { service, notifyUsers } = harness({}, { memberIds: ['m1'] });
+    await service.update('trip-1', 'host-1', { startDate: utcDate(40), endDate: utcDate(45) });
+    expect(notifyUsers.mock.calls[0][1].body).toContain('dates changed');
+  });
+
+  it('stays quiet about edits members would not plan around', async () => {
+    const { service, notifyUsers } = harness({}, { memberIds: ['m1'] });
+    await service.update('trip-1', 'host-1', { title: 'Better title', description: 'More detail', capacity: 6 });
+    expect(notifyUsers).not.toHaveBeenCalled();
+  });
+
+  it('does not count re-sent identical values as changes', async () => {
+    const { service, notifyUsers } = harness({}, { memberIds: ['m1'] });
+    await service.update('trip-1', 'host-1', {
+      destination: 'Spiti',
+      budgetMin: 100,
+      budgetMax: 200,
+      startDate: utcDate(30),
+      endDate: utcDate(35),
+    });
+    expect(notifyUsers).not.toHaveBeenCalled();
+  });
+});
+
+describe('TripsService.cancel — cancelling an open trip', () => {
+  function harness(
+    tripOverrides: Record<string, unknown> = {},
+    options: { memberIds?: string[]; requesterIds?: string[]; rawError?: Error } = {},
+  ) {
+    const trip = { id: 'trip-1', hostId: 'host-1', status: 'OPEN', title: 'Spiti', ...tripOverrides };
+    const update = vi.fn().mockResolvedValue({ ...trip, status: 'CANCELLED' });
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const findMany = vi.fn().mockImplementation(async ({ where }: { where: { status: string } }) =>
+      (where.status === 'APPROVED' ? (options.memberIds ?? []) : (options.requesterIds ?? [])).map((userId) => ({ userId })),
+    );
+    const executeRaw = options.rawError ? vi.fn().mockRejectedValue(options.rawError) : vi.fn().mockResolvedValue(1);
+    const tx = {
+      trip: { update },
+      tripMembership: { findMany, updateMany },
+      $executeRaw: executeRaw,
+    };
+    const notifyUsers = vi.fn().mockResolvedValue(undefined);
+    const service = makeService(
+      {
+        trip: { findUnique: vi.fn().mockResolvedValue(trip) },
+        $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+      },
+      { notifyUsers },
+    );
+    return { service, update, updateMany, findMany, executeRaw, notifyUsers };
+  }
+
+  it('is host-only', async () => {
+    const { service } = harness({ hostId: 'someone-else' });
+    await expect(service.cancel('trip-1', 'host-1')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('refuses a trip that is already cancelled', async () => {
+    const { service } = harness({ status: 'CANCELLED' });
+    await expect(service.cancel('trip-1', 'host-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('refuses a completed trip', async () => {
+    const { service, update } = harness({ status: 'COMPLETED' });
+    await expect(service.cancel('trip-1', 'host-1')).rejects.toThrow(/can't be cancelled/);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('cancels a FULL trip too', async () => {
+    const { service, update } = harness({ status: 'FULL' });
+    await service.cancel('trip-1', 'host-1');
+    expect(update).toHaveBeenCalledWith({ where: { id: 'trip-1' }, data: { status: 'CANCELLED' } });
+  });
+
+  it('marks the trip cancelled and declines the pending requests', async () => {
+    const { service, update, updateMany } = harness();
+    await service.cancel('trip-1', 'host-1');
+    expect(update).toHaveBeenCalledWith({ where: { id: 'trip-1' }, data: { status: 'CANCELLED' } });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { tripId: 'trip-1', status: 'REQUESTED' },
+      data: { status: 'REJECTED', respondedAt: expect.any(Date) },
+    });
+  });
+
+  it("releases every member's date hold, so the overlap constraint stops blocking them", async () => {
+    const { service, executeRaw } = harness();
+    await service.cancel('trip-1', 'host-1');
+    expect(executeRaw).toHaveBeenCalledTimes(1);
+    const [strings, ...values] = executeRaw.mock.calls[0] as [string[], ...unknown[]];
+    expect(strings.join('?')).toContain('SET period = NULL');
+    expect(strings.join('?')).toContain('"tripId" = ?');
+    expect(values).toEqual(['trip-1']);
+  });
+
+  it('tells approved members (never the host) and the people whose requests were closed', async () => {
+    const { service, findMany, notifyUsers } = harness({}, { memberIds: ['m1', 'm2'], requesterIds: ['r1'] });
+    await service.cancel('trip-1', 'host-1');
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tripId: 'trip-1', status: 'APPROVED', userId: { not: 'host-1' } } }),
+    );
+    expect(notifyUsers).toHaveBeenCalledTimes(2);
+    expect(notifyUsers.mock.calls[0][0]).toEqual(['m1', 'm2']);
+    expect(notifyUsers.mock.calls[0][1].title).toBe('Trip cancelled');
+    expect(notifyUsers.mock.calls[1][0]).toEqual(['r1']);
+    expect(notifyUsers.mock.calls[1][1].title).toBe('Request closed');
+  });
+
+  it('notifies nobody if the cancellation itself fails', async () => {
+    const { service, notifyUsers } = harness({}, { memberIds: ['m1'], rawError: new Error('db went away') });
+    await expect(service.cancel('trip-1', 'host-1')).rejects.toThrow('db went away');
+    expect(notifyUsers).not.toHaveBeenCalled();
+  });
+});
+
+describe('TripsService.respondToRequest — approving only while the trip is taking people', () => {
+  function harness(tripStatus: string) {
+    const trip = { id: 'trip-1', hostId: 'host-1', status: tripStatus, title: 'Spiti', capacity: 4 };
+    const membership = { id: 'm-1', tripId: 'trip-1', userId: 'guest-1', status: 'REQUESTED' };
+    const update = vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...membership, ...data }));
+    const notifyUser = vi.fn().mockResolvedValue(undefined);
+    const service = makeService(
+      {
+        trip: { findUnique: vi.fn().mockResolvedValue(trip), update: vi.fn() },
+        tripMembership: {
+          findUnique: vi.fn().mockResolvedValue(membership),
+          count: vi.fn().mockResolvedValue(1),
+          update,
+        },
+      },
+      { notifyUser },
+    );
+    return { service, update, notifyUser };
+  }
+
+  it.each(['COMPLETED', 'CANCELLED'])('refuses to approve a request on a %s trip', async (status) => {
+    const { service, update } = harness(status);
+    await expect(service.respondToRequest('trip-1', 'm-1', 'host-1', 'APPROVED')).rejects.toThrow(
+      /can't take new members/,
+    );
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it.each(['COMPLETED', 'CANCELLED'])('still lets a host decline a leftover request on a %s trip', async (status) => {
+    const { service, update } = harness(status);
+    await service.respondToRequest('trip-1', 'm-1', 'host-1', 'REJECTED');
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }));
+  });
+
+  it('still approves on an open trip', async () => {
+    const { service, update } = harness('OPEN');
+    await service.respondToRequest('trip-1', 'm-1', 'host-1', 'APPROVED');
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) }));
   });
 });

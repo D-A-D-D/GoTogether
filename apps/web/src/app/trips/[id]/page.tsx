@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import {
   ApiError,
+  cancelTrip,
   completeTrip,
   getTrip,
   leaveTrip,
@@ -43,6 +44,7 @@ export default function TripDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmingComplete, setConfirmingComplete] = useState(false);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   // Captured when the trip loads rather than read during render, so render
   // stays pure (react-hooks/purity). Only used to decide whether to offer
   // "mark complete"; the server enforces the end-date rule itself.
@@ -91,6 +93,20 @@ export default function TripDetailPage() {
       await load();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Could not do that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCancel() {
+    setActionError(null);
+    setBusy(true);
+    try {
+      await cancelTrip(tripId);
+      setConfirmingCancel(false);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Could not cancel the trip.');
     } finally {
       setBusy(false);
     }
@@ -148,6 +164,9 @@ export default function TripDetailPage() {
     trip.status === 'COMPLETED' &&
     (isApprovedMember || trip.myMembership?.status === 'LEFT');
   const canMarkComplete = isHost && (trip.status === 'OPEN' || trip.status === 'FULL' || trip.status === 'ONGOING');
+  const isCancelled = trip.status === 'CANCELLED';
+  // The server only allows editing and cancelling while the trip is OPEN or FULL.
+  const canManage = isHost && (trip.status === 'OPEN' || trip.status === 'FULL');
   // endDate is the last day, inclusive: the trip is over once that whole UTC day has passed.
   const endOfLastDay = (Math.floor(new Date(trip.endDate).getTime() / DAY_MS) + 1) * DAY_MS;
   const hasEnded = loadedAt !== null && loadedAt >= endOfLastDay;
@@ -178,9 +197,21 @@ export default function TripDetailPage() {
                 Reviews
               </Link>
             )}
+            {canManage && (
+              <Link href={`/trips/${trip.id}/edit`} className={PILL_LINK}>
+                Edit trip
+              </Link>
+            )}
           </div>
         )}
       </div>
+
+      {isCancelled && (
+        <p className="mt-4 rounded-xl border border-danger/40 bg-danger/5 p-3 text-sm text-danger">
+          This trip was cancelled by the host.
+          {trip.myMembership?.status === 'APPROVED' && ' Chat and expenses stay open so you can settle up.'}
+        </p>
+      )}
 
       {trip.description && <p className="mt-4 text-sm text-foreground/70">{trip.description}</p>}
 
@@ -260,7 +291,7 @@ export default function TripDetailPage() {
             </button>
           </div>
         )}
-        {!isHost && trip.myMembership?.status === 'APPROVED' && (
+        {!isHost && !isCancelled && trip.myMembership?.status === 'APPROVED' && (
           <div className="flex items-center gap-3">
             <span className="text-sm text-accent">You&rsquo;re in.</span>
             <button
@@ -326,7 +357,7 @@ export default function TripDetailPage() {
         </div>
       )}
 
-      {isHost && (
+      {isHost && !isCancelled && (
         <div className="mt-10">
           <h2 className="text-lg font-medium">Join requests</h2>
           {requests !== null && requests.length === 0 && (
@@ -365,6 +396,45 @@ export default function TripDetailPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {canManage && (
+        <div className="mt-12 border-t border-line pt-6">
+          {confirmingCancel ? (
+            <div>
+              <p className="text-sm text-foreground/80">
+                Cancel this trip? Pending requests are declined and everyone on the trip is notified. Chat and expenses
+                stay open so you can settle up. This can&apos;t be undone.
+              </p>
+              <div className="mt-3 flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={busy}
+                  className="rounded-full border border-danger px-4 py-1.5 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
+                >
+                  {busy ? 'Cancelling…' : 'Yes, cancel trip'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingCancel(false)}
+                  disabled={busy}
+                  className="text-sm text-foreground/60 underline hover:text-foreground"
+                >
+                  Keep trip
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingCancel(true)}
+              className="text-sm text-foreground/50 underline hover:text-danger"
+            >
+              Cancel this trip
+            </button>
+          )}
         </div>
       )}
     </main>
