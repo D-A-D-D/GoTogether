@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import { ApiError, getMe, getTags, updateMe, type PublicUser, type Tag } from '@/lib/api';
 import { Label, TextInput, TextArea, ErrorText, PrimaryButton } from '@/components/form-controls';
+import { PushSettings } from './push-settings';
 import { TrustHistory } from './trust-history';
 
 const CATEGORY_LABELS: Record<Tag['category'], string> = {
@@ -193,6 +194,7 @@ export default function ProfilePage() {
         </PrimaryButton>
       </div>
 
+      <PushSettings />
       <TrustHistory />
     </main>
   );

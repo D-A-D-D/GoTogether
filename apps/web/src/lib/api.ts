@@ -467,3 +467,24 @@ export interface TrustEvent {
 export function listTrustEvents() {
   return apiFetch<TrustEvent[]>('/users/me/trust-events');
 }
+
+// ---------- Push notifications ----------
+
+/** Not secret — it's what a browser needs to call `pushManager.subscribe()`. */
+export function getVapidPublicKey() {
+  return apiFetch<{ publicKey: string }>('/notifications/vapid-public-key');
+}
+
+/** The shape of the browser's `PushSubscription.toJSON()`. */
+export interface PushSubscriptionInput {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+export function savePushSubscription(subscription: PushSubscriptionInput) {
+  return apiFetch<unknown>('/notifications/subscribe', { method: 'POST', body: JSON.stringify(subscription) });
+}
+
+export function deletePushSubscription(endpoint: string) {
+  return apiFetch<void>('/notifications/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint }) });
+}

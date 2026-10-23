@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import * as api from '@/lib/api';
 import type { PublicUser } from '@/lib/api';
+import { disablePush } from '@/lib/push';
 
 type Status = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -61,6 +62,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // First, while the session can still authenticate the request: stop this
+    // device receiving the user's notifications once they've logged out.
+    await disablePush().catch(() => undefined);
     await api.logout().catch(() => undefined);
     setUser(null);
     setStatus('unauthenticated');

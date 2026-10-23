@@ -59,3 +59,66 @@ self.addEventListener('fetch', (event) => {
   }
   // Everything else: untouched.
 });
+
+// ---- Push notifications ----
+//
+// The API sends JSON `{ title, body, url? }` (apps/api notifications.service).
+// `url` arrives over the wire, so it is only ever resolved against our own
+// origin: a push can open a page in this app, never send someone elsewhere.
+
+function safeTargetUrl(raw) {
+  const home = `${self.location.origin}/`;
+  try {
+    const target = new URL(typeof raw === 'string' ? raw : '/', self.location.origin);
+    return target.origin === self.location.origin ? target.href : home;
+  } catch {
+    return home;
+  }
+}
+
+self.addEventListener('push', (event) => {
+  let payload = {};
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      payload = { body: event.data.text() };
+    }
+  }
+  const title = typeof payload.title === 'string' && payload.title ? payload.title : 'GoTogether';
+  const target = safeTargetUrl(payload.url);
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: typeof payload.body === 'string' ? payload.body : '',
+      icon: '/icons/icon-192.png',
+      // One notification per destination (a trip's chat, say) rather than a
+      // growing stack: a newer one replaces the last and still alerts.
+      tag: target,
+      renotify: true,
+      data: { url: target },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = safeTargetUrl(event.notification.data && event.notification.data.url);
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
+      const existing = windows.find((w) => w.url.startsWith(self.location.origin));
+      if (existing) {
+        await existing.focus();
+        // navigate() can reject (e.g. a client we don't control) — fall through to a new window.
+        try {
+          await existing.navigate(target);
+          return;
+        } catch {
+          // fall through
+        }
+      }
+      await self.clients.openWindow(target);
+    }),
+  );
+});

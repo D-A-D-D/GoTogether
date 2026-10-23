@@ -9,7 +9,8 @@
     "dev:api": "npm run start:dev --workspace apps/api",
     "build": "npm run build --workspace apps/web && npm run build --workspace apps/api",
     "lint": "npm run lint --workspace apps/web && npm run lint --workspace apps/api",
-    "test:api": "npm run test --workspace apps/api"
+    "test:api": "npm run test --workspace apps/api",
+    "test:web": "npm run test --workspace apps/web"
   },
   "allowScripts": {
     "prisma@6.19.3": true,

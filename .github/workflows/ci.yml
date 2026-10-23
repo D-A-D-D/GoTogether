@@ -51,6 +51,9 @@ jobs:
       - name: Unit test — api
         run: npm run test:api
 
+      - name: Unit test — web (service worker)
+        run: npm run test:web
+
       - name: E2E test — api
         run: npm run test:e2e
         working-directory: apps/api
