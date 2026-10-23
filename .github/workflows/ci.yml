@@ -8,7 +8,10 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest`: GitHub began moving that label to Ubuntu 26
+    # on 2026-10-19, and an unattended image change shouldn't be able to turn
+    # CI red on an unrelated push. Bump deliberately.
+    runs-on: ubuntu-24.04
     env:
       # Dummy values so the API can boot in CI without real secrets.
       # /health and the unit suite don't touch a real database or issue
