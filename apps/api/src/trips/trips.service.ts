@@ -298,7 +298,7 @@ export class TripsService {
       await this.notifications.notifyUser(trip.host.id, {
         title: 'New join request',
         body: `${user.name} wants to join "${trip.title}"`,
-        url: `/trips/${tripId}/requests`,
+        url: `/trips/${tripId}`,
       });
       return membership;
     } catch (error) {

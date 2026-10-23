@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import { ApiError, getMe, getTags, updateMe, type PublicUser, type Tag } from '@/lib/api';
 import { Label, TextInput, TextArea, ErrorText, PrimaryButton } from '@/components/form-controls';
+import { TrustHistory } from './trust-history';
 
 const CATEGORY_LABELS: Record<Tag['category'], string> = {
   STYLE: 'Trip style',
@@ -191,6 +192,8 @@ export default function ProfilePage() {
           {saving ? 'Saving…' : 'Save changes'}
         </PrimaryButton>
       </div>
+
+      <TrustHistory />
     </main>
   );
 }

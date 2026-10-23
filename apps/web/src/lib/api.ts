@@ -402,3 +402,68 @@ export function settleSplit(tripId: string, expenseId: string, splitId: string) 
     method: 'PATCH',
   });
 }
+
+// ---------- Reviews & trust ----------
+
+/** Host-only, and only once the trip's end date has passed. Irreversible — it opens reviews. */
+export function completeTrip(tripId: string) {
+  return apiFetch<Trip>(`/trips/${tripId}/complete`, { method: 'POST' });
+}
+
+export interface ReviewTarget {
+  id: string;
+  name: string;
+  trustScore: number;
+}
+
+export interface ReceivedReview {
+  id: string;
+  tripId: string;
+  reviewerId: string;
+  revieweeId: string;
+  reliability: number;
+  friendliness: number;
+  communication: number;
+  cleanliness: number;
+  comment: string | null;
+  createdAt: string;
+  processedAt: string | null;
+  reviewer: ReviewTarget;
+}
+
+export interface CreateReviewInput {
+  revieweeId: string;
+  reliability: number;
+  friendliness: number;
+  communication: number;
+  cleanliness: number;
+  comment?: string;
+}
+
+/** People on the trip the caller hasn't reviewed yet. */
+export function listPendingReviews(tripId: string) {
+  return apiFetch<ReviewTarget[]>(`/trips/${tripId}/reviews/pending`);
+}
+
+/** Only reviews whose blind window has resolved — an unresolved one about you is never returned. */
+export function listReceivedReviews(tripId: string) {
+  return apiFetch<ReceivedReview[]>(`/trips/${tripId}/reviews/received`);
+}
+
+export function submitReview(tripId: string, input: CreateReviewInput) {
+  return apiFetch<unknown>(`/trips/${tripId}/reviews`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export interface TrustEvent {
+  id: string;
+  delta: number;
+  reason: string;
+  resultingScore: number;
+  tripId: string | null;
+  createdAt: string;
+}
+
+/** The audit trail behind the caller's own trust score, newest first. */
+export function listTrustEvents() {
+  return apiFetch<TrustEvent[]>('/users/me/trust-events');
+}

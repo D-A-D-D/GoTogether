@@ -220,7 +220,7 @@ export class ReviewsService {
         delta === 0
           ? "A teammate's review of you came in"
           : `Your trust score just ${delta > 0 ? 'went up' : 'went down'} — a review came in`,
-      url: `/trips/${review.tripId}/reviews/received`,
+      url: `/trips/${review.tripId}/reviews`,
     });
   }
 

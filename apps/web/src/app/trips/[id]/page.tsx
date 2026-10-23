@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import {
   ApiError,
+  completeTrip,
   getTrip,
   leaveTrip,
   listTripRequests,
@@ -16,6 +17,9 @@ import {
   type TripRequest,
 } from '@/lib/api';
 import { ErrorText, PrimaryButton } from '@/components/form-controls';
+
+const PILL_LINK =
+  'rounded-full border border-line px-4 py-2 text-sm text-foreground/70 hover:border-accent/50 hover:text-foreground';
 
 function formatDateRange(startIso: string, endIso: string): string {
   const fmt = new Intl.DateTimeFormat('en', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -33,6 +37,11 @@ export default function TripDetailPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmingComplete, setConfirmingComplete] = useState(false);
+  // Captured when the trip loads rather than read during render, so render
+  // stays pure (react-hooks/purity). Only used to decide whether to offer
+  // "mark complete"; the server enforces the end-date rule itself.
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
 
   const isHost = trip !== null && user !== null && trip.hostId === user.id;
 
@@ -40,6 +49,7 @@ export default function TripDetailPage() {
     try {
       const t = await getTrip(tripId);
       setTrip(t);
+      setLoadedAt(Date.now());
       if (t.hostId === user?.id) {
         setRequests(await listTripRequests(tripId));
       }
@@ -81,6 +91,20 @@ export default function TripDetailPage() {
     }
   }
 
+  async function handleComplete() {
+    setActionError(null);
+    setBusy(true);
+    try {
+      await completeTrip(tripId);
+      setConfirmingComplete(false);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Could not mark the trip complete.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleRespond(membershipId: string, decision: 'APPROVED' | 'REJECTED') {
     setActionError(null);
     setBusy(true);
@@ -113,6 +137,13 @@ export default function TripDetailPage() {
   }
 
   const isApprovedMember = isHost || trip.myMembership?.status === 'APPROVED';
+  // The server lets anyone who held an approved membership review, including
+  // people who later left, so the link isn't limited to current members.
+  const canReview =
+    trip.status === 'COMPLETED' &&
+    (isApprovedMember || trip.myMembership?.status === 'LEFT');
+  const canMarkComplete = isHost && (trip.status === 'OPEN' || trip.status === 'FULL' || trip.status === 'ONGOING');
+  const hasEnded = loadedAt !== null && loadedAt >= new Date(trip.endDate).getTime();
 
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
@@ -122,20 +153,23 @@ export default function TripDetailPage() {
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{trip.title}</h1>
           <p className="mt-1 text-foreground/70">{trip.destination}</p>
         </div>
-        {isApprovedMember && (
-          <div className="flex shrink-0 gap-2">
-            <Link
-              href={`/trips/${trip.id}/expenses`}
-              className="rounded-full border border-line px-4 py-2 text-sm text-foreground/70 hover:border-accent/50 hover:text-foreground"
-            >
-              Expenses
-            </Link>
-            <Link
-              href={`/trips/${trip.id}/chat`}
-              className="rounded-full border border-line px-4 py-2 text-sm text-foreground/70 hover:border-accent/50 hover:text-foreground"
-            >
-              Open chat
-            </Link>
+        {(isApprovedMember || canReview) && (
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            {isApprovedMember && (
+              <>
+                <Link href={`/trips/${trip.id}/expenses`} className={PILL_LINK}>
+                  Expenses
+                </Link>
+                <Link href={`/trips/${trip.id}/chat`} className={PILL_LINK}>
+                  Open chat
+                </Link>
+              </>
+            )}
+            {canReview && (
+              <Link href={`/trips/${trip.id}/reviews`} className={PILL_LINK}>
+                Reviews
+              </Link>
+            )}
           </div>
         )}
       </div>
@@ -232,6 +266,51 @@ export default function TripDetailPage() {
           </div>
         )}
       </div>
+
+      {canMarkComplete && (
+        <div className="mt-6 rounded-xl border border-line bg-surface p-4">
+          {!hasEnded ? (
+            <p className="text-sm text-foreground/60">
+              Once the trip ends you can mark it complete, which opens reviews for everyone who went.
+            </p>
+          ) : confirmingComplete ? (
+            <div>
+              <p className="text-sm text-foreground/80">
+                Mark this trip complete? This can&apos;t be undone &mdash; reviews open for everyone who went.
+              </p>
+              <div className="mt-3 flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={handleComplete}
+                  disabled={busy}
+                  className="rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
+                >
+                  {busy ? 'Saving…' : 'Yes, mark complete'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingComplete(false)}
+                  disabled={busy}
+                  className="text-sm text-foreground/60 underline hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-foreground/70">This trip has ended. Mark it complete to open reviews.</p>
+              <button
+                type="button"
+                onClick={() => setConfirmingComplete(true)}
+                className="shrink-0 rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-background hover:opacity-90"
+              >
+                Mark complete
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {isHost && (
         <div className="mt-10">
