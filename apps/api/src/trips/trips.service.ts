@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { MatchingService } from './matching.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { BlocksService } from '../safety/blocks.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { DiscoverTripsDto } from './dto/discover-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
@@ -51,6 +52,7 @@ export class TripsService {
     private readonly prisma: PrismaService,
     private readonly matching: MatchingService,
     private readonly notifications: NotificationsService,
+    private readonly blocks: BlocksService,
   ) {}
 
   /** Strips the private exclude-tag list unless the viewer is the host (BLUEPRINT §01/§09). */
@@ -185,12 +187,7 @@ export class TripsService {
       include: { preferenceTags: true },
     });
 
-    const blocks = await this.prisma.block.findMany({
-      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
-    });
-    const blockedHostIds = new Set(
-      blocks.map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId)),
-    );
+    const blockedHostIds = await this.blocks.blockedWith(userId);
 
     const ownMemberships = await this.prisma.tripMembership.findMany({
       where: { userId },
@@ -259,6 +256,14 @@ export class TripsService {
     ]);
 
     const viewerIsHost = trip.hostId === requestingUserId;
+
+    // A block hides the two people from each other, trips included — as if the
+    // trip didn't exist, so nothing reveals that a block is why. Someone already
+    // on the trip keeps access; blocking doesn't remove anyone from a trip.
+    if (!viewerIsHost && !myMembership && (await this.blocks.areBlocked(requestingUserId, trip.hostId))) {
+      throw new NotFoundException('Trip not found');
+    }
+
     return {
       ...this.toPublicTrip(trip, viewerIsHost),
       approvedCount,
@@ -280,6 +285,10 @@ export class TripsService {
 
     if (trip.host.id === userId) {
       throw new BadRequestException("You can't request to join your own trip");
+    }
+    // Same "doesn't exist" answer as viewing the trip: a block must not be discoverable.
+    if (await this.blocks.areBlocked(userId, trip.host.id)) {
+      throw new NotFoundException('Trip not found');
     }
     if (trip.status !== TripStatus.OPEN) {
       throw new BadRequestException('This trip is not open for requests');
@@ -347,8 +356,14 @@ export class TripsService {
     if (!own || own.status !== MembershipStatus.APPROVED) {
       throw new ForbiddenException('Only approved trip members can see who else is on the trip');
     }
+    // Blocked pairs are absent from each other's roster (BLUEPRINT §08), in both directions.
+    const hidden = await this.blocks.blockedWith(requesterId);
     return this.prisma.tripMembership.findMany({
-      where: { tripId, status: MembershipStatus.APPROVED },
+      where: {
+        tripId,
+        status: MembershipStatus.APPROVED,
+        ...(hidden.size > 0 ? { userId: { notIn: [...hidden] } } : {}),
+      },
       select: {
         id: true,
         userId: true,

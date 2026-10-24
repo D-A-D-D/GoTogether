@@ -375,6 +375,8 @@ model Report {
   createdAt  DateTime     @default(now())
 
   @@index([reportedId, status])
+  // The per-reporter daily rate limit counts a reporter's recent reports.
+  @@index([reporterId, createdAt])
 }
 
 enum ReportStatus {
@@ -394,4 +396,8 @@ model Block {
   createdAt DateTime @default(now())
 
   @@unique([blockerId, blockedId])
+  // The unique index covers lookups by blocker; blocks are symmetric, so
+  // "who has blocked me" is looked up by blocked user on every request that
+  // filters on them.
+  @@index([blockedId])
 }

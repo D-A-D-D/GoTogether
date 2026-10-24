@@ -5,9 +5,10 @@ import { ChatService } from './chat.service.js';
 import { ChatController } from './chat.controller.js';
 import { ChatGateway } from './chat.gateway.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
+import { SafetyModule } from '../safety/safety.module.js';
 
 @Module({
-  imports: [PassportModule.register({}), JwtModule.register({}), NotificationsModule],
+  imports: [PassportModule.register({}), JwtModule.register({}), NotificationsModule, SafetyModule],
   providers: [ChatService, ChatGateway],
   controllers: [ChatController],
   exports: [ChatService],

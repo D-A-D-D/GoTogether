@@ -5,7 +5,7 @@ import { ChatService } from './chat.service.js';
 // and which cursors are accepted. That paging really tiles a conversation is
 // checked against the real database by hand (docs/ROADMAP.md).
 
-function harness(options: { approved?: boolean; cursorExists?: boolean } = {}) {
+function harness(options: { approved?: boolean; cursorExists?: boolean; hidden?: string[] } = {}) {
   const findMany = vi.fn().mockResolvedValue([
     { id: 'm3', content: 'newest', sender: { id: 'u', name: 'U' } },
     { id: 'm2', content: 'middle', sender: { id: 'u', name: 'U' } },
@@ -21,6 +21,7 @@ function harness(options: { approved?: boolean; cursorExists?: boolean } = {}) {
       message: { findMany, findFirst },
     } as never,
     {} as never,
+    { blockedWith: vi.fn().mockResolvedValue(new Set(options.hidden ?? [])) } as never,
   );
   return { service, findMany, findFirst };
 }
@@ -75,5 +76,41 @@ describe('ChatService.listMessages', () => {
       BadRequestException,
     );
     expect(findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatService — blocks', () => {
+  it('leaves out messages from anyone blocked with the reader', async () => {
+    const { service, findMany } = harness({ hidden: ['blocked-1', 'blocked-2'] });
+    await service.listMessages('trip-1', 'user-1', undefined, 50);
+    expect(findMany.mock.calls[0][0].where).toEqual({
+      roomId: 'room-1',
+      senderId: { notIn: ['blocked-1', 'blocked-2'] },
+    });
+  });
+
+  it('adds no sender filter when nobody is blocked', async () => {
+    const { service, findMany } = harness();
+    await service.listMessages('trip-1', 'user-1', undefined, 50);
+    expect(findMany.mock.calls[0][0].where).toEqual({ roomId: 'room-1' });
+  });
+
+  it("does not push a message to someone who is blocked with the sender", async () => {
+    const notifyUsers = vi.fn().mockResolvedValue(undefined);
+    const service = new ChatService(
+      {
+        tripMembership: {
+          findUnique: vi.fn().mockResolvedValue({ status: 'APPROVED' }),
+          findMany: vi.fn().mockResolvedValue([{ userId: 'friend' }, { userId: 'blocked-one' }]),
+        },
+        chatRoom: { findUnique: vi.fn().mockResolvedValue({ id: 'room-1' }) },
+        message: { create: vi.fn().mockResolvedValue({ id: 'm1', sender: { id: 'sender', name: 'Sam' } }) },
+      } as never,
+      { notifyUsers } as never,
+      { blockedWith: vi.fn().mockResolvedValue(new Set(['blocked-one'])) } as never,
+    );
+    await service.createMessage('trip-1', 'sender', 'hello');
+    expect(notifyUsers).toHaveBeenCalledTimes(1);
+    expect(notifyUsers.mock.calls[0][0]).toEqual(['friend']);
   });
 });

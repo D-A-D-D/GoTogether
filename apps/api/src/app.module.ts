@@ -10,6 +10,7 @@ import { ChatModule } from './chat/chat.module.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
 import { ReviewsModule } from './reviews/reviews.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { SafetyModule } from './safety/safety.module.js';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
     ExpensesModule,
     ReviewsModule,
     NotificationsModule,
+    SafetyModule,
   ],
   controllers: [AppController],
 })

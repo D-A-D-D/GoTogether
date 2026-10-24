@@ -508,3 +508,53 @@ export function savePushSubscription(subscription: PushSubscriptionInput) {
 export function deletePushSubscription(endpoint: string) {
   return apiFetch<void>('/notifications/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint }) });
 }
+
+// ---------- Safety: blocking and reporting ----------
+
+/** The reasons a report can give. Mirrors apps/api/src/safety/report-reasons.ts — keep the two in step. */
+export const REPORT_REASONS = [
+  { value: 'HARASSMENT', label: 'Harassment or threats' },
+  { value: 'SAFETY_CONCERN', label: 'Made me feel unsafe' },
+  { value: 'FAKE_PROFILE', label: 'Fake or misleading profile' },
+  { value: 'INAPPROPRIATE_CONTENT', label: 'Inappropriate messages or content' },
+  { value: 'SPAM', label: 'Spam or scams' },
+  { value: 'NO_SHOW', label: "Didn't show up or bailed" },
+  { value: 'OTHER', label: 'Something else' },
+] as const;
+
+export type ReportReason = (typeof REPORT_REASONS)[number]['value'];
+
+export interface ReportInput {
+  reportedId: string;
+  reason: ReportReason;
+  details?: string;
+  /** Optional; must be a trip you both were on. */
+  tripId?: string;
+}
+
+/** Only people you've been on a trip with can be reported (the API enforces it). */
+export function reportUser(input: ReportInput) {
+  return apiFetch<{ id: string; createdAt: string }>('/reports', { method: 'POST', body: JSON.stringify(input) });
+}
+
+/**
+ * Blocking is symmetric and total (BLUEPRINT §08): you stop seeing each other in
+ * discovery, on trip pages, in travellers lists and in chat. Neither is told.
+ */
+export function blockUser(userId: string) {
+  return apiFetch<void>(`/users/${userId}/block`, { method: 'POST' });
+}
+
+export function unblockUser(userId: string) {
+  return apiFetch<void>(`/users/${userId}/block`, { method: 'DELETE' });
+}
+
+export interface BlockedUser {
+  user: { id: string; name: string };
+  createdAt: string;
+}
+
+/** The people *you* have blocked — never who has blocked you. */
+export function listBlockedUsers() {
+  return apiFetch<BlockedUser[]>('/users/me/blocks');
+}

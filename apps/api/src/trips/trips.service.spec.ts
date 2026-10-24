@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/index.js';
 import { TripsService } from './trips.service.js';
 
@@ -8,8 +8,20 @@ import { TripsService } from './trips.service.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function makeService(prisma: Record<string, unknown>, notifications: Record<string, unknown> = {}) {
-  return new TripsService(prisma as never, {} as never, notifications as never);
+/** A BlocksService stand-in: nobody is blocked unless a test says so. */
+function makeBlocks(options: { hidden?: string[]; blocked?: boolean } = {}) {
+  return {
+    blockedWith: vi.fn().mockResolvedValue(new Set(options.hidden ?? [])),
+    areBlocked: vi.fn().mockResolvedValue(options.blocked ?? false),
+  };
+}
+
+function makeService(
+  prisma: Record<string, unknown>,
+  notifications: Record<string, unknown> = {},
+  blocks: Record<string, unknown> = makeBlocks(),
+) {
+  return new TripsService(prisma as never, {} as never, notifications as never, blocks as never);
 }
 
 /** A UTC date string like "2026-10-23", `daysFromToday` days from today. */
@@ -434,5 +446,115 @@ describe('TripsService.respondToRequest — approving only while the trip is tak
     const { service, update } = harness('OPEN');
     await service.respondToRequest('trip-1', 'm-1', 'host-1', 'APPROVED');
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) }));
+  });
+});
+
+describe('TripsService — honouring blocks', () => {
+  const trip = {
+    id: 'trip-1',
+    hostId: 'host-1',
+    status: 'OPEN',
+    title: 'Spiti',
+    capacity: 4,
+    includeTags: [],
+    excludeTags: [],
+    host: { id: 'host-1' },
+  };
+
+  function viewing(options: { blocked?: boolean; myMembership?: Record<string, unknown> | null } = {}) {
+    const blocks = makeBlocks({ blocked: options.blocked });
+    const service = makeService(
+      {
+        trip: { findUnique: vi.fn().mockResolvedValue(trip) },
+        tripMembership: {
+          count: vi.fn().mockResolvedValue(1),
+          findUnique: vi.fn().mockResolvedValue(options.myMembership ?? null),
+        },
+      },
+      {},
+      blocks,
+    );
+    return { service, blocks };
+  }
+
+  it('hides a trip from someone blocked with its host, as if it did not exist', async () => {
+    const { service, blocks } = viewing({ blocked: true });
+    await expect(service.findById('trip-1', 'viewer')).rejects.toBeInstanceOf(NotFoundException);
+    expect(blocks.areBlocked).toHaveBeenCalledWith('viewer', 'host-1');
+  });
+
+  it('still shows the trip to someone who is already on it — blocking removes nobody from a trip', async () => {
+    const { service } = viewing({ blocked: true, myMembership: { status: 'APPROVED', role: 'MEMBER' } });
+    await expect(service.findById('trip-1', 'viewer')).resolves.toBeDefined();
+  });
+
+  it("never hides a host's own trip from them", async () => {
+    const { service, blocks } = viewing({ blocked: true });
+    await expect(service.findById('trip-1', 'host-1')).resolves.toBeDefined();
+    expect(blocks.areBlocked).not.toHaveBeenCalled();
+  });
+
+  it('shows the trip when there is no block', async () => {
+    const { service } = viewing({ blocked: false });
+    await expect(service.findById('trip-1', 'viewer')).resolves.toMatchObject({ id: 'trip-1' });
+  });
+
+  it('refuses a join request to a blocked host with the same "not found" as viewing — a block is not discoverable', async () => {
+    const create = vi.fn();
+    const blocks = makeBlocks({ blocked: true });
+    const service = makeService(
+      {
+        // Even a trip that is not open answers "not found", not "not open for requests".
+        trip: { findUnique: vi.fn().mockResolvedValue({ ...trip, status: 'COMPLETED' }) },
+        tripMembership: { create },
+      },
+      {},
+      blocks,
+    );
+    await expect(service.requestToJoin('trip-1', 'viewer')).rejects.toBeInstanceOf(NotFoundException);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  function roster(hidden: string[]) {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const service = makeService(
+      { tripMembership: { findUnique: vi.fn().mockResolvedValue({ status: 'APPROVED' }), findMany } },
+      {},
+      makeBlocks({ hidden }),
+    );
+    return { service, findMany };
+  }
+
+  it("leaves blocked people off a member's travellers list", async () => {
+    const { service, findMany } = roster(['blocked-1', 'blocked-2']);
+    await service.listMembers('trip-1', 'viewer');
+    expect(findMany.mock.calls[0][0].where).toEqual({
+      tripId: 'trip-1',
+      status: 'APPROVED',
+      userId: { notIn: ['blocked-1', 'blocked-2'] },
+    });
+  });
+
+  it('lists everyone when nobody is blocked', async () => {
+    const { service, findMany } = roster([]);
+    await service.listMembers('trip-1', 'viewer');
+    expect(findMany.mock.calls[0][0].where).toEqual({ tripId: 'trip-1', status: 'APPROVED' });
+  });
+
+  it("drops a blocked host's trips from discovery", async () => {
+    const tripFindMany = vi.fn().mockResolvedValue([]);
+    const service = makeService(
+      {
+        user: { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'viewer', preferenceTags: [] }) },
+        tripMembership: { findMany: vi.fn().mockResolvedValue([]) },
+        trip: { findMany: tripFindMany },
+      },
+      {},
+      makeBlocks({ hidden: ['blocked-host'] }),
+    );
+    await service.discover('viewer', {} as never);
+    const notIn = tripFindMany.mock.calls[0][0].where.hostId.notIn as string[];
+    expect(notIn).toContain('blocked-host');
+    expect(notIn).toContain('viewer');
   });
 });

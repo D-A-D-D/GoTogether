@@ -11,12 +11,15 @@ import {
   completeTrip,
   getTrip,
   leaveTrip,
+  listTripMembers,
   listTripRequests,
   requestToJoinTrip,
   respondToTripRequest,
   type TripDetail,
+  type TripMember,
   type TripRequest,
 } from '@/lib/api';
+import { Travellers } from './travellers';
 import { ErrorText, PrimaryButton } from '@/components/form-controls';
 
 // Mirror the API's rules in apps/api/src/trips/trip-rules.ts, which are the
@@ -40,6 +43,7 @@ export default function TripDetailPage() {
 
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [requests, setRequests] = useState<TripRequest[] | null>(null);
+  const [members, setMembers] = useState<TripMember[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,6 +63,15 @@ export default function TripDetailPage() {
       setLoadedAt(Date.now());
       if (t.hostId === user?.id) {
         setRequests(await listTripRequests(tripId));
+      }
+      // The travellers list is only for people on the trip (the API refuses anyone
+      // else). It's a nicety, so a failure here must never break the page.
+      if (t.hostId === user?.id || t.myMembership?.status === 'APPROVED') {
+        try {
+          setMembers(await listTripMembers(tripId));
+        } catch {
+          setMembers(null);
+        }
       }
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Could not load this trip.');
@@ -305,6 +318,10 @@ export default function TripDetailPage() {
           </div>
         )}
       </div>
+
+      {isApprovedMember && members !== null && user && (
+        <Travellers tripId={trip.id} members={members} meId={user.id} onChanged={load} />
+      )}
 
       {canMarkComplete && (
         <div className="mt-6 rounded-xl border border-line bg-surface p-4">

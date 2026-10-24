@@ -10,6 +10,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
+import { BlocksService } from '../safety/blocks.service.js';
 import { ChatService } from './chat.service.js';
 import { JoinRoomDto } from './dto/join-room.dto.js';
 import { SendMessageDto } from './dto/send-message.dto.js';
@@ -40,6 +41,7 @@ export class ChatGateway implements OnGatewayConnection {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly chatService: ChatService,
+    private readonly blocks: BlocksService,
   ) {}
 
   /** Auth happens once at connection time — a bad/missing token just drops the socket. */
@@ -74,10 +76,28 @@ export class ChatGateway implements OnGatewayConnection {
   async onSendMessage(@ConnectedSocket() socket: AuthedSocket, @MessageBody() dto: SendMessageDto) {
     try {
       const message = await this.chatService.createMessage(dto.tripId, socket.data.userId, dto.content);
-      this.server.to(roomName(dto.tripId)).emit('message', message);
+      await this.broadcast(dto.tripId, message);
       return { ok: true, message };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : 'Unable to send message' };
+    }
+  }
+
+  /**
+   * Sends a message to everyone in the room — except anyone blocked with the
+   * sender (BLUEPRINT §08: a block hides people from each other in chat too).
+   * That has to be per recipient, so it can't be a single room-wide emit. The
+   * sender always gets their own message back; the client adds it from this
+   * broadcast rather than from the send acknowledgement.
+   */
+  private async broadcast(tripId: string, message: { senderId: string }): Promise<void> {
+    const hidden = await this.blocks.blockedWith(message.senderId);
+    const sockets = await this.server.in(roomName(tripId)).fetchSockets();
+    for (const recipient of sockets) {
+      const recipientId = recipient.data.userId as string | undefined;
+      if (recipientId === message.senderId || (recipientId !== undefined && !hidden.has(recipientId))) {
+        recipient.emit('message', message);
+      }
     }
   }
 

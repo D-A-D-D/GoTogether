@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { MembershipStatus } from '../generated/prisma/index.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { BlocksService } from '../safety/blocks.service.js';
 
 const SENDER_SELECT = { id: true, name: true } as const;
 const MESSAGE_PREVIEW_LENGTH = 80;
@@ -11,6 +12,7 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly blocks: BlocksService,
   ) {}
 
   /**
@@ -51,10 +53,12 @@ export class ChatService {
       where: { tripId, status: MembershipStatus.APPROVED, userId: { not: senderId } },
       select: { userId: true },
     });
+    // A message must not reach someone who's blocked with the sender — by push either.
+    const hidden = await this.blocks.blockedWith(senderId);
     const preview =
       content.length > MESSAGE_PREVIEW_LENGTH ? `${content.slice(0, MESSAGE_PREVIEW_LENGTH)}…` : content;
     await this.notifications.notifyUsers(
-      others.map((m) => m.userId),
+      others.map((m) => m.userId).filter((id) => !hidden.has(id)),
       { title: message.sender.name, body: preview, url: `/trips/${tripId}/chat` },
     );
 
@@ -83,8 +87,11 @@ export class ChatService {
       if (!cursor) throw new BadRequestException('Unknown message to page from');
     }
 
+    // Messages from anyone blocked with the reader, in either direction, are left out.
+    const hidden = await this.blocks.blockedWith(userId);
+
     const messages = await this.prisma.message.findMany({
-      where: { roomId },
+      where: { roomId, ...(hidden.size > 0 ? { senderId: { notIn: [...hidden] } } : {}) },
       include: { sender: { select: SENDER_SELECT } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit,
