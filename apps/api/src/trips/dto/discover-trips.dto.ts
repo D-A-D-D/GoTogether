@@ -40,4 +40,12 @@ export class DiscoverTripsDto {
   @Min(1)
   @Max(50)
   limit?: number;
+
+  // How many results to skip — for "show more". Results are ordered
+  // deterministically (see discover-paging.ts), so offset paging is stable.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }

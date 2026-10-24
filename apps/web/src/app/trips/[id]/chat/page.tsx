@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams } from 'next/navigation';
 import { io, type Socket } from 'socket.io-client';
 import { useAuth } from '@/lib/auth-context';
@@ -10,8 +10,28 @@ import { ErrorText, TextInput, PrimaryButton } from '@/components/form-controls'
 
 type RoomStatus = 'connecting' | 'joined' | 'denied' | 'disconnected';
 
+// Passed explicitly: "a full page came back" is how we know there may be older messages.
+const HISTORY_PAGE_SIZE = 50;
+
+// Within this many pixels of the bottom counts as "reading the latest".
+const NEAR_BOTTOM_PX = 120;
+
 function formatTime(iso: string): string {
   return new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+}
+
+/**
+ * Merges two lists of messages, oldest first, one entry per id. Used for the
+ * first history page (which must not wipe out a live message that arrived
+ * before it did) and for each older page prepended later. Ordered by time and
+ * then id — the same total order the server pages in.
+ */
+function mergeMessages(a: ChatMessage[], b: ChatMessage[]): ChatMessage[] {
+  const byId = new Map<string, ChatMessage>();
+  for (const message of [...a, ...b]) byId.set(message.id, message);
+  return [...byId.values()].sort((x, y) =>
+    x.createdAt === y.createdAt ? (x.id < y.id ? -1 : 1) : x.createdAt < y.createdAt ? -1 : 1,
+  );
 }
 
 export default function TripChatPage() {
@@ -26,9 +46,18 @@ export default function TripChatPage() {
   const [roomError, setRoomError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // Whether the reader is at the latest messages. Only then does a new message scroll the list.
+  const nearBottom = useRef(true);
+  // Set just before older messages are prepended, so the scroll position can be kept where it was.
+  const prependAnchor = useRef<{ scrollHeight: number } | null>(null);
+  const lastMessageId = useRef<string | null>(null);
+  const userId = user?.id;
 
   useEffect(() => {
     if (authStatus !== 'authenticated') return;
@@ -36,8 +65,11 @@ export default function TripChatPage() {
     let cancelled = false;
     void Promise.resolve().then(async () => {
       try {
-        const history = await listMessages(tripId);
-        if (!cancelled) setMessages(history);
+        const history = await listMessages(tripId, undefined, HISTORY_PAGE_SIZE);
+        if (cancelled) return;
+        // Merged, not assigned: a live message may have arrived first.
+        setMessages((prev) => mergeMessages(history, prev));
+        setHasMoreHistory(history.length >= HISTORY_PAGE_SIZE);
       } catch {
         if (!cancelled) setHistoryError('Could not load message history.');
       }
@@ -77,9 +109,48 @@ export default function TripChatPage() {
     };
   }, [authStatus, tripId]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages]);
+  // Runs before paint, so older messages appearing above never cause a visible jump.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const last = messages[messages.length - 1];
+    if (prependAnchor.current && list) {
+      // Older messages were added above: keep the reader looking at what they were reading.
+      list.scrollTop += list.scrollHeight - prependAnchor.current.scrollHeight;
+      prependAnchor.current = null;
+    } else if (last && last.id !== lastMessageId.current) {
+      // A message was added at the bottom. Follow it if this is the first load, the reader is
+      // already at the bottom, or it's their own — but don't yank someone who's reading history.
+      const firstLoad = lastMessageId.current === null;
+      if (firstLoad || nearBottom.current || last.senderId === userId) {
+        bottomRef.current?.scrollIntoView({ block: 'end' });
+      }
+    }
+    lastMessageId.current = last?.id ?? null;
+  }, [messages, userId]);
+
+  async function handleLoadOlder() {
+    const oldest = messages[0];
+    if (!oldest || loadingOlder) return;
+    setLoadingOlder(true);
+    setHistoryError(null);
+    try {
+      const older = await listMessages(tripId, oldest.id, HISTORY_PAGE_SIZE);
+      if (older.length > 0) {
+        prependAnchor.current = { scrollHeight: listRef.current?.scrollHeight ?? 0 };
+        setMessages((prev) => mergeMessages(older, prev));
+      }
+      setHasMoreHistory(older.length >= HISTORY_PAGE_SIZE);
+    } catch {
+      setHistoryError('Could not load older messages.');
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  function handleListScroll() {
+    const list = listRef.current;
+    if (list) nearBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < NEAR_BOTTOM_PX;
+  }
 
   function handleSend(event: FormEvent) {
     event.preventDefault();
@@ -110,7 +181,25 @@ export default function TripChatPage() {
 
       {roomStatus !== 'denied' && (
         <>
-          <div className="mt-4 flex-1 overflow-y-auto rounded-xl border border-line bg-surface p-4">
+          {/* Capped so the list scrolls on its own — otherwise the whole page does, and the
+              scroll position can't be kept when older messages are loaded above. */}
+          <div
+            ref={listRef}
+            onScroll={handleListScroll}
+            className="mt-4 max-h-[65vh] min-h-[40vh] flex-1 overflow-y-auto rounded-xl border border-line bg-surface p-4"
+          >
+            {hasMoreHistory && (
+              <div className="mb-3 text-center">
+                <button
+                  type="button"
+                  onClick={handleLoadOlder}
+                  disabled={loadingOlder}
+                  className="rounded-full border border-line px-4 py-1.5 text-xs text-foreground/70 hover:border-accent/50 hover:text-foreground disabled:opacity-50"
+                >
+                  {loadingOlder ? 'Loading…' : 'Load older messages'}
+                </button>
+              </div>
+            )}
             {historyError && <ErrorText>{historyError}</ErrorText>}
             {roomStatus === 'connecting' && messages.length === 0 && (
               <p className="text-sm text-foreground/50">Connecting…</p>

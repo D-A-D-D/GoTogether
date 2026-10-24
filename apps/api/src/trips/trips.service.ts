@@ -11,6 +11,7 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { DiscoverTripsDto } from './dto/discover-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
+import { compareDiscovered, pageOf } from './discover-paging.js';
 import { MIN_APPROVED_MEMBERS_TO_COMPLETE, hasTripEnded, isSameUtcDay, startOfUtcDay, startsInThePast } from './trip-rules.js';
 import {
   MembershipRole,
@@ -235,9 +236,9 @@ export class TripsService {
           endDate: dto.endDate,
         }),
       }))
-      .sort((a, b) => b.matchScore - a.matchScore);
+      .sort(compareDiscovered);
 
-    return scored.slice(0, dto.limit ?? 20);
+    return pageOf(scored, dto.offset ?? 0, dto.limit ?? 20);
   }
 
   async findById(tripId: string, requestingUserId: string) {

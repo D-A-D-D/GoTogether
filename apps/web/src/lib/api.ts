@@ -284,6 +284,8 @@ export interface DiscoverParams {
   endDate?: string;
   destination?: string;
   limit?: number;
+  /** How many results to skip — pass the number already shown to get the next page. */
+  offset?: number;
 }
 
 export function discoverTrips(params: DiscoverParams = {}) {
@@ -476,6 +478,8 @@ export interface TrustEvent {
   reason: string;
   resultingScore: number;
   tripId: string | null;
+  /** The trip's title, or null if it has since been deleted (or the event has no trip). */
+  tripTitle: string | null;
   createdAt: string;
 }
 

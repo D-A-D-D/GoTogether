@@ -1,11 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRequireAuth } from '@/lib/use-require-auth';
-import { ApiError, discoverTrips, type DiscoveredTrip } from '@/lib/api';
+import { ApiError, discoverTrips, type DiscoverParams, type DiscoveredTrip } from '@/lib/api';
 import { Label, TextInput, ErrorText, PrimaryButton } from '@/components/form-controls';
 import { TripCard } from '@/components/trip-card';
+
+// Passed explicitly (rather than relying on the server's default) because
+// "a full page came back" is how we know there may be more to show.
+const PAGE_SIZE = 20;
 
 export default function DiscoverTripsPage() {
   const status = useRequireAuth();
@@ -19,23 +23,39 @@ export default function DiscoverTripsPage() {
   const [trips, setTrips] = useState<DiscoveredTrip[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // The search that produced the results on screen. "Show more" continues
+  // *that* search, not whatever has since been typed into the fields above.
+  const [activeQuery, setActiveQuery] = useState<DiscoverParams>({});
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Bumped by every new search, so a slow "show more" for an old one is ignored.
+  const searchSeq = useRef(0);
 
   const runSearch = useCallback(async () => {
+    const seq = ++searchSeq.current;
     setLoading(true);
     setError(null);
     try {
-      const results = await discoverTrips({
+      const query: DiscoverParams = {
         destination: destination || undefined,
         budgetMin: budgetMin ? Number(budgetMin) : undefined,
         budgetMax: budgetMax ? Number(budgetMax) : undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
-      });
+        limit: PAGE_SIZE,
+      };
+      const results = await discoverTrips(query);
+      if (seq !== searchSeq.current) return;
       setTrips(results);
+      setActiveQuery(query);
+      setHasMore(results.length === PAGE_SIZE);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not load trips — try again.');
+      if (seq === searchSeq.current) {
+        setError(err instanceof ApiError ? err.message : 'Could not load trips — try again.');
+      }
     } finally {
-      setLoading(false);
+      // A superseded search must not switch off the "searching" state of the newer one.
+      if (seq === searchSeq.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- explicit "Search" submit only, not on every keystroke
   }, []);
@@ -50,6 +70,27 @@ export default function DiscoverTripsPage() {
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     runSearch();
+  }
+
+  async function handleShowMore() {
+    if (!trips || loadingMore) return;
+    const seq = searchSeq.current;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const next = await discoverTrips({ ...activeQuery, offset: trips.length });
+      if (seq !== searchSeq.current) return;
+      // Deduped, in case a trip was added while browsing and shifted the pages.
+      setTrips((prev) => {
+        const seen = new Set((prev ?? []).map((t) => t.id));
+        return [...(prev ?? []), ...next.filter((t) => !seen.has(t.id))];
+      });
+      setHasMore(next.length === PAGE_SIZE);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load more trips — try again.');
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   if (status !== 'authenticated') return null;
@@ -115,6 +156,16 @@ export default function DiscoverTripsPage() {
           <p className="text-sm text-foreground/60">No trips match yet — try widening your search.</p>
         )}
         {trips?.map((trip) => <TripCard key={trip.id} trip={trip} />)}
+        {hasMore && (
+          <button
+            type="button"
+            onClick={handleShowMore}
+            disabled={loadingMore}
+            className="mt-2 self-center rounded-full border border-line px-5 py-2 text-sm text-foreground/70 hover:border-accent/50 hover:text-foreground disabled:opacity-50"
+          >
+            {loadingMore ? 'Loading…' : 'Show more trips'}
+          </button>
+        )}
       </div>
     </main>
   );

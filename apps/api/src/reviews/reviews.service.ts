@@ -224,10 +224,24 @@ export class ReviewsService {
     });
   }
 
-  listMyTrustEvents(userId: string) {
-    return this.prisma.trustScoreEvent.findMany({
+  /**
+   * The caller's own trust history, newest first, with the title of the trip
+   * each change came from. `TrustScoreEvent.tripId` is a plain column (no
+   * relation), so titles are looked up in one extra query. A trip that has
+   * since been deleted just has no title.
+   */
+  async listMyTrustEvents(userId: string) {
+    const events = await this.prisma.trustScoreEvent.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
+
+    const tripIds = [...new Set(events.flatMap((e) => (e.tripId ? [e.tripId] : [])))];
+    const trips = tripIds.length
+      ? await this.prisma.trip.findMany({ where: { id: { in: tripIds } }, select: { id: true, title: true } })
+      : [];
+    const titleById = new Map(trips.map((t) => [t.id, t.title]));
+
+    return events.map((e) => ({ ...e, tripTitle: e.tripId ? (titleById.get(e.tripId) ?? null) : null }));
   }
 }

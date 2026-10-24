@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { MembershipStatus } from '../generated/prisma/index.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -65,15 +65,28 @@ export class ChatService {
    * Cursor pagination, oldest-first within the returned page. `before` is
    * a message id to page backward from (load-older-messages), omitted for
    * the initial (most recent) page.
+   *
+   * Two details that matter once people actually page back through history:
+   *  - ordering is (createdAt, id), not createdAt alone — messages can share
+   *    a timestamp, and without a tie-break the cursor could land inside such
+   *    a group and skip or repeat messages;
+   *  - the cursor must be a message in *this* room. An unknown id would
+   *    otherwise be a server error, and another room's id would act as a
+   *    position marker into this one.
    */
   async listMessages(tripId: string, userId: string, before: string | undefined, limit: number) {
     await this.assertCanAccess(tripId, userId);
     const roomId = await this.getRoomId(tripId);
 
+    if (before) {
+      const cursor = await this.prisma.message.findFirst({ where: { id: before, roomId }, select: { id: true } });
+      if (!cursor) throw new BadRequestException('Unknown message to page from');
+    }
+
     const messages = await this.prisma.message.findMany({
       where: { roomId },
       include: { sender: { select: SENDER_SELECT } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit,
       ...(before ? { skip: 1, cursor: { id: before } } : {}),
     });

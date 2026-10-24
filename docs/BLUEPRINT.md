@@ -84,6 +84,8 @@ Hard filters remove candidates entirely; a weighted score ranks whoever survives
 
 Weights live in config, not code — the first thing worth A/B testing once there's real join/accept data. What should *not* change without a deliberate decision: only the aggregate percentage is ever returned to a client. The factor breakdown stays server-side.
 
+**Ordering and paging.** Results are ordered by score, then sooner start date, then id — a *total* order, so the feed never reshuffles between requests and walking its pages (`limit` + `offset`) shows every trip exactly once. This is not cosmetic: many trips genuinely tie (same tags, same dates), and sorting by score alone leaves ties in whatever order the database returned them, which differs between requests — so a trip could be shown twice or skipped as someone paged through (demonstrated and fixed 2026-10-24). The same discipline applies to chat history, which pages by `(createdAt, id)` for the same reason: with `createdAt` alone, messages sharing a timestamp were silently lost or repeated at page boundaries.
+
 ## 05 — Trust & reputation
 
 **Review mechanics**

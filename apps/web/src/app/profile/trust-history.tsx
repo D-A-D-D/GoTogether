@@ -47,10 +47,24 @@ export function TrustHistory() {
                 className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm"
               >
                 <div>
-                  <p>{event.tripId ? 'Review received' : event.reason}</p>
+                  <p>
+                    {event.tripId ? (
+                      <>
+                        Review received
+                        {event.tripTitle && (
+                          <>
+                            {' '}
+                            on <span className="text-foreground/80">{event.tripTitle}</span>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      event.reason
+                    )}
+                  </p>
                   <p className="mt-0.5 text-xs text-foreground/50">
                     {dateFormat.format(new Date(event.createdAt))}
-                    {event.tripId && (
+                    {event.tripId && event.tripTitle && (
                       <>
                         {' '}
                         &middot;{' '}
