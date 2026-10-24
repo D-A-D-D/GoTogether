@@ -4,12 +4,14 @@ import { JwtService } from '@nestjs/jwt';
 import {
   ConnectedSocket,
   MessageBody,
-  OnGatewayConnection,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import type { Server, Socket } from 'socket.io';
+import type { Namespace, Server, Socket } from 'socket.io';
+import { AccountStateService } from '../auth/account-state.service.js';
+import { AccountStatus } from '../generated/prisma/index.js';
 import { BlocksService } from '../safety/blocks.service.js';
 import { ChatService } from './chat.service.js';
 import { JoinRoomDto } from './dto/join-room.dto.js';
@@ -33,7 +35,7 @@ function roomName(tripId: string): string {
   cors: { origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000', credentials: true },
 })
 @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
-export class ChatGateway implements OnGatewayConnection {
+export class ChatGateway implements OnGatewayInit {
   @WebSocketServer()
   private server!: Server;
 
@@ -42,23 +44,38 @@ export class ChatGateway implements OnGatewayConnection {
     private readonly config: ConfigService,
     private readonly chatService: ChatService,
     private readonly blocks: BlocksService,
+    private readonly accounts: AccountStateService,
   ) {}
 
-  /** Auth happens once at connection time — a bad/missing token just drops the socket. */
-  async handleConnection(socket: Socket): Promise<void> {
+  /** A restricted or deleted account has no business in a live connection. */
+  private async isInGoodStanding(userId: string): Promise<boolean> {
+    const state = await this.accounts.get(userId);
+    return state !== null && state.accountStatus === AccountStatus.ACTIVE;
+  }
+
+  /**
+   * Auth happens once, as namespace middleware — so the client's `connect` only
+   * fires after it succeeds. Doing it in handleConnection instead lets an
+   * immediate `joinRoom` outrun the (database-backed) account check and arrive
+   * with no userId. A bad token, or a restricted account, is a connect_error.
+   */
+  afterInit(namespace: Namespace): void {
+    namespace.use((socket, next) => {
+      this.authenticate(socket).then(
+        () => next(),
+        () => next(new Error('Unauthorized')),
+      );
+    });
+  }
+
+  private async authenticate(socket: Socket): Promise<void> {
     const token = this.extractToken(socket);
-    if (!token) {
-      socket.disconnect(true);
-      return;
-    }
-    try {
-      const payload = await this.jwt.verifyAsync<{ sub: string }>(token, {
-        secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
-      });
-      (socket as AuthedSocket).data.userId = payload.sub;
-    } catch {
-      socket.disconnect(true);
-    }
+    if (!token) throw new Error('Missing token');
+    const payload = await this.jwt.verifyAsync<{ sub: string }>(token, {
+      secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+    });
+    if (!(await this.isInGoodStanding(payload.sub))) throw new Error('Account not available');
+    (socket as AuthedSocket).data.userId = payload.sub;
   }
 
   @SubscribeMessage('joinRoom')
@@ -75,6 +92,11 @@ export class ChatGateway implements OnGatewayConnection {
   @SubscribeMessage('sendMessage')
   async onSendMessage(@ConnectedSocket() socket: AuthedSocket, @MessageBody() dto: SendMessageDto) {
     try {
+      // A socket opened before a suspension must stop working at the next send.
+      if (!(await this.isInGoodStanding(socket.data.userId))) {
+        socket.disconnect(true);
+        return { ok: false, error: 'This account is not available' };
+      }
       const message = await this.chatService.createMessage(dto.tripId, socket.data.userId, dto.content);
       await this.broadcast(dto.tripId, message);
       return { ok: true, message };
@@ -95,7 +117,13 @@ export class ChatGateway implements OnGatewayConnection {
     const sockets = await this.server.in(roomName(tripId)).fetchSockets();
     for (const recipient of sockets) {
       const recipientId = recipient.data.userId as string | undefined;
-      if (recipientId === message.senderId || (recipientId !== undefined && !hidden.has(recipientId))) {
+      if (recipientId === undefined) continue;
+      // Someone suspended since they connected: cut the connection rather than keep feeding it.
+      if (!(await this.isInGoodStanding(recipientId))) {
+        recipient.disconnect(true);
+        continue;
+      }
+      if (recipientId === message.senderId || !hidden.has(recipientId)) {
         recipient.emit('message', message);
       }
     }

@@ -11,6 +11,7 @@ import { ExpensesModule } from './expenses/expenses.module.js';
 import { ReviewsModule } from './reviews/reviews.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { SafetyModule } from './safety/safety.module.js';
+import { AdminModule } from './admin/admin.module.js';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { SafetyModule } from './safety/safety.module.js';
     ReviewsModule,
     NotificationsModule,
     SafetyModule,
+    AdminModule,
   ],
   controllers: [AppController],
 })

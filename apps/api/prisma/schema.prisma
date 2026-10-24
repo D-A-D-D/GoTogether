@@ -40,6 +40,10 @@ model User {
   trustScore       Int              @default(50)
   verificationTier VerificationTier @default(EMAIL)
   accountStatus    AccountStatus    @default(ACTIVE)
+  // Never settable through the app — only by an operator with database access
+  // (apps/api/scripts/set-role.ts). A moderator can suspend people, so the way
+  // to become one shouldn't be reachable from a request.
+  role             UserRole         @default(USER)
 
   preferenceTags Tag[] @relation("UserPreferenceTags")
 
@@ -58,11 +62,19 @@ model User {
   reviewsGiven     Review[]           @relation("ReviewReviewer")
   reviewsReceived  Review[]           @relation("ReviewReviewee")
   pushSubscriptions PushSubscription[]
+  reportsReviewed     Report[]           @relation("ReportReviewer")
+  moderationsMade     ModerationAction[] @relation("ModerationActor")
+  moderationsReceived ModerationAction[] @relation("ModerationTarget")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([trustScore])
+}
+
+enum UserRole {
+  USER
+  ADMIN
 }
 
 enum VerificationTier {
@@ -374,7 +386,15 @@ model Report {
   status     ReportStatus @default(OPEN)
   createdAt  DateTime     @default(now())
 
+  // Set when a moderator moves the report out of OPEN.
+  reviewedById String?
+  reviewedBy   User?     @relation("ReportReviewer", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+  // The moderator's note on how it was resolved. Required to close a report.
+  resolution   String?
+
   @@index([reportedId, status])
+  @@index([status, createdAt])
   // The per-reporter daily rate limit counts a reporter's recent reports.
   @@index([reporterId, createdAt])
 }
@@ -384,6 +404,25 @@ enum ReportStatus {
   REVIEWING
   ACTIONED
   DISMISSED
+}
+
+// Append-only audit trail of every change a moderator makes to an account's
+// status (BLUEPRINT §10: "audit trail matters for a trust-scored marketplace").
+// Rows are never updated or deleted by the app.
+model ModerationAction {
+  id         String        @id @default(cuid())
+  actorId    String
+  actor      User          @relation("ModerationActor", fields: [actorId], references: [id])
+  targetId   String
+  target     User          @relation("ModerationTarget", fields: [targetId], references: [id])
+  fromStatus AccountStatus
+  toStatus   AccountStatus
+  reason     String
+  // The report this action closed, when it came from one.
+  reportId   String?
+  createdAt  DateTime      @default(now())
+
+  @@index([targetId, createdAt])
 }
 
 // Symmetric hide — application layer must check both directions.

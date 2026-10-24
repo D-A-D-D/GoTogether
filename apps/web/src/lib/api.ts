@@ -27,6 +27,8 @@ export interface PublicUser {
   trustScore: number;
   verificationTier: 'EMAIL' | 'PHONE' | 'ID';
   accountStatus: 'ACTIVE' | 'SUSPENDED' | 'BANNED';
+  /** Only ever changed by an operator with database access — see apps/api/scripts/set-role.ts. */
+  role: 'USER' | 'ADMIN';
   createdAt: string;
   updatedAt: string;
   preferenceTags?: Tag[];
@@ -557,4 +559,65 @@ export interface BlockedUser {
 /** The people *you* have blocked — never who has blocked you. */
 export function listBlockedUsers() {
   return apiFetch<BlockedUser[]>('/users/me/blocks');
+}
+
+// ---------- Moderation (admins only) ----------
+
+export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'BANNED';
+export type ReportStatus = 'OPEN' | 'REVIEWING' | 'ACTIONED' | 'DISMISSED';
+
+export interface AdminReport {
+  id: string;
+  reason: ReportReason;
+  details: string | null;
+  status: ReportStatus;
+  createdAt: string;
+  tripId: string | null;
+  tripTitle: string | null;
+  resolution: string | null;
+  reviewedAt: string | null;
+  reviewedBy: { id: string; name: string } | null;
+  reporter: { id: string; name: string; trustScore: number };
+  reported: { id: string; name: string; trustScore: number; accountStatus: AccountStatus };
+  /** What a reviewer needs to judge one report in proportion to the rest. */
+  context: { openReportsAgainstThem: number; distinctReportersAgainstThem: number; blockedByCount: number };
+}
+
+export interface RestrictedUser {
+  id: string;
+  name: string;
+  trustScore: number;
+  accountStatus: Exclude<AccountStatus, 'ACTIVE'>;
+  lastDecision: { reason: string; createdAt: string; actor: { id: string; name: string } } | null;
+}
+
+/** Omit `status` for the open queue (OPEN and REVIEWING); pass ACTIONED or DISMISSED for history. */
+export function listAdminReports(status?: ReportStatus) {
+  return apiFetch<AdminReport[]>(`/admin/reports${status ? `?status=${status}` : ''}`);
+}
+
+/** A note is required to close a report (ACTIONED or DISMISSED). */
+export function reviewAdminReport(
+  reportId: string,
+  input: { status: 'REVIEWING' | 'ACTIONED' | 'DISMISSED'; resolution?: string },
+) {
+  return apiFetch<{ id: string; status: ReportStatus }>(`/admin/reports/${reportId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+/**
+ * Suspend, ban or reinstate an account. The reason is always required — it goes
+ * in the audit trail. Passing `reportId` closes that report as ACTIONED too.
+ */
+export function setAccountStatus(userId: string, input: { status: AccountStatus; reason: string; reportId?: string }) {
+  return apiFetch<{ id: string; accountStatus: AccountStatus }>(`/admin/users/${userId}/status`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function listRestrictedUsers() {
+  return apiFetch<RestrictedUser[]>('/admin/users/restricted');
 }

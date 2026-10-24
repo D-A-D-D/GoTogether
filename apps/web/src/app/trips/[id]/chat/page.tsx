@@ -93,6 +93,11 @@ export default function TripChatPage() {
       });
     });
 
+    // The server refuses the connection itself (bad/expired token, suspended account).
+    socket.on('connect_error', () => {
+      if (!cancelled) setRoomStatus('disconnected');
+    });
+
     socket.on('disconnect', () => {
       if (!cancelled) setRoomStatus('disconnected');
     });

@@ -29,6 +29,11 @@ export function SiteHeader() {
               <Link href="/trips/mine" className="text-foreground/70 hover:text-foreground">
                 My trips
               </Link>
+              {user?.role === 'ADMIN' && (
+                <Link href="/admin" className="text-foreground/70 hover:text-foreground">
+                  Admin
+                </Link>
+              )}
               <Link href="/profile" className="text-foreground/70 hover:text-foreground">
                 {user?.name}
               </Link>
