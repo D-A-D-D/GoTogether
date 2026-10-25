@@ -15,6 +15,7 @@ import { UpdateTripDto } from './dto/update-trip.dto.js';
 import { compareDiscovered, pageOf } from './discover-paging.js';
 import { MIN_APPROVED_MEMBERS_TO_COMPLETE, hasTripEnded, isSameUtcDay, startOfUtcDay, startsInThePast } from './trip-rules.js';
 import {
+  AccountStatus,
   MembershipRole,
   MembershipStatus,
   Prisma,
@@ -35,7 +36,11 @@ const REQUESTER_SELECT = {
   preferenceTags: true,
 } as const;
 
-type TripWithRelations = Trip & { includeTags: Tag[]; excludeTags: Tag[]; host: { id: string } };
+type TripWithRelations = Trip & {
+  includeTags: Tag[];
+  excludeTags: Tag[];
+  host: { id: string; accountStatus: AccountStatus };
+};
 
 /** True when `error` is the TripMembership overlap GIST exclusion constraint firing. */
 function isOverlapViolation(error: unknown): boolean {
@@ -205,6 +210,8 @@ export class TripsService {
         status: TripStatus.OPEN,
         visibility: TripVisibility.PUBLIC,
         hostId: { notIn: [...blockedHostIds, userId] },
+        // A suspended or closed host can't run a trip, so it isn't offered to anyone new.
+        host: { accountStatus: AccountStatus.ACTIVE },
         id: { notIn: alreadyInteractedTripIds },
         ...(dto.destination ? { destination: { contains: dto.destination, mode: 'insensitive' } } : {}),
       },
@@ -239,13 +246,16 @@ export class TripsService {
   }
 
   async findById(tripId: string, requestingUserId: string) {
-    const trip = await this.prisma.trip.findUnique({
+    const found = await this.prisma.trip.findUnique({
       where: { id: tripId },
-      include: { includeTags: true, excludeTags: true, host: { select: HOST_SELECT } },
+      // accountStatus is for this check only — it must not reach the client in `host`.
+      include: { includeTags: true, excludeTags: true, host: { select: { ...HOST_SELECT, accountStatus: true } } },
     });
-    if (!trip) {
+    if (!found) {
       throw new NotFoundException('Trip not found');
     }
+    const { accountStatus: hostStatus, ...host } = found.host;
+    const trip = { ...found, host };
 
     const [approvedCount, myMembership] = await Promise.all([
       this.prisma.tripMembership.count({ where: { tripId, status: MembershipStatus.APPROVED } }),
@@ -258,10 +268,13 @@ export class TripsService {
     const viewerIsHost = trip.hostId === requestingUserId;
 
     // A block hides the two people from each other, trips included — as if the
-    // trip didn't exist, so nothing reveals that a block is why. Someone already
-    // on the trip keeps access; blocking doesn't remove anyone from a trip.
-    if (!viewerIsHost && !myMembership && (await this.blocks.areBlocked(requestingUserId, trip.hostId))) {
-      throw new NotFoundException('Trip not found');
+    // trip didn't exist, so nothing reveals that a block is why. A suspended or
+    // closed host's trip is hidden from outsiders the same way. Someone already
+    // on the trip keeps access; neither a block nor a suspension removes anyone.
+    if (!viewerIsHost && !myMembership) {
+      if (hostStatus !== AccountStatus.ACTIVE || (await this.blocks.areBlocked(requestingUserId, trip.hostId))) {
+        throw new NotFoundException('Trip not found');
+      }
     }
 
     return {
@@ -274,7 +287,7 @@ export class TripsService {
   private async getTripOrThrow(tripId: string): Promise<TripWithRelations> {
     const trip = await this.prisma.trip.findUnique({
       where: { id: tripId },
-      include: { includeTags: true, excludeTags: true, host: { select: { id: true } } },
+      include: { includeTags: true, excludeTags: true, host: { select: { id: true, accountStatus: true } } },
     });
     if (!trip) throw new NotFoundException('Trip not found');
     return trip;
@@ -286,8 +299,9 @@ export class TripsService {
     if (trip.host.id === userId) {
       throw new BadRequestException("You can't request to join your own trip");
     }
-    // Same "doesn't exist" answer as viewing the trip: a block must not be discoverable.
-    if (await this.blocks.areBlocked(userId, trip.host.id)) {
+    // Same "doesn't exist" answer as viewing the trip: a block (or the host's
+    // suspension) must not be discoverable.
+    if (trip.host.accountStatus !== AccountStatus.ACTIVE || (await this.blocks.areBlocked(userId, trip.host.id))) {
       throw new NotFoundException('Trip not found');
     }
     if (trip.status !== TripStatus.OPEN) {
@@ -338,7 +352,8 @@ export class TripsService {
   async listRequests(tripId: string, hostUserId: string) {
     await this.assertIsHost(tripId, hostUserId);
     return this.prisma.tripMembership.findMany({
-      where: { tripId, status: MembershipStatus.REQUESTED },
+      // Someone suspended since they asked can't take a place, so the host isn't shown them.
+      where: { tripId, status: MembershipStatus.REQUESTED, user: { accountStatus: AccountStatus.ACTIVE } },
       include: { user: { select: REQUESTER_SELECT } },
       orderBy: { requestedAt: 'asc' },
     });
@@ -401,6 +416,16 @@ export class TripsService {
         url: `/trips/${tripId}`,
       });
       return rejected;
+    }
+
+    // A suspended or closed account can't take a place. Answered as "not found"
+    // — the request has dropped out of the host's list — and rejecting stays allowed.
+    const requester = await this.prisma.user.findUnique({
+      where: { id: membership.userId },
+      select: { accountStatus: true },
+    });
+    if (requester?.accountStatus !== AccountStatus.ACTIVE) {
+      throw new NotFoundException('Request not found');
     }
 
     // Rejecting is always fine, but approving needs a trip still taking people.

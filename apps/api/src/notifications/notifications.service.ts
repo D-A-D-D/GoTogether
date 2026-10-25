@@ -1,6 +1,7 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import webpush from 'web-push';
+import { AccountStatus } from '../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 export interface NotificationPayload {
@@ -58,7 +59,11 @@ export class NotificationsService implements OnModuleInit {
    * sending a chat message, processing a review, etc. all still succeed).
    */
   async notifyUser(userId: string, payload: NotificationPayload): Promise<void> {
-    const subs = await this.prisma.pushSubscription.findMany({ where: { userId } });
+    // A suspended or closed account gets nothing — otherwise a chat preview would
+    // keep reaching the lock screen of someone who has been locked out of the app.
+    const subs = await this.prisma.pushSubscription.findMany({
+      where: { userId, user: { accountStatus: AccountStatus.ACTIVE } },
+    });
     await Promise.all(subs.map((sub) => this.send(sub, payload)));
   }
 

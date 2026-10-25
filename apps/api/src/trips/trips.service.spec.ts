@@ -409,11 +409,12 @@ describe('TripsService.cancel — cancelling an open trip', () => {
 });
 
 describe('TripsService.respondToRequest — approving only while the trip is taking people', () => {
-  function harness(tripStatus: string) {
+  function harness(tripStatus: string, requesterStatus = 'ACTIVE') {
     const trip = { id: 'trip-1', hostId: 'host-1', status: tripStatus, title: 'Spiti', capacity: 4 };
     const membership = { id: 'm-1', tripId: 'trip-1', userId: 'guest-1', status: 'REQUESTED' };
     const update = vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...membership, ...data }));
     const notifyUser = vi.fn().mockResolvedValue(undefined);
+    const userFindUnique = vi.fn().mockResolvedValue({ accountStatus: requesterStatus });
     const service = makeService(
       {
         trip: { findUnique: vi.fn().mockResolvedValue(trip), update: vi.fn() },
@@ -422,10 +423,11 @@ describe('TripsService.respondToRequest — approving only while the trip is tak
           count: vi.fn().mockResolvedValue(1),
           update,
         },
+        user: { findUnique: userFindUnique },
       },
       { notifyUser },
     );
-    return { service, update, notifyUser };
+    return { service, update, notifyUser, userFindUnique };
   }
 
   it.each(['COMPLETED', 'CANCELLED'])('refuses to approve a request on a %s trip', async (status) => {
@@ -458,7 +460,7 @@ describe('TripsService — honouring blocks', () => {
     capacity: 4,
     includeTags: [],
     excludeTags: [],
-    host: { id: 'host-1' },
+    host: { id: 'host-1', accountStatus: 'ACTIVE' },
   };
 
   function viewing(options: { blocked?: boolean; myMembership?: Record<string, unknown> | null } = {}) {
@@ -556,5 +558,151 @@ describe('TripsService — honouring blocks', () => {
     const notIn = tripFindMany.mock.calls[0][0].where.hostId.notIn as string[];
     expect(notIn).toContain('blocked-host');
     expect(notIn).toContain('viewer');
+  });
+});
+
+describe('TripsService - suspended and closed accounts', () => {
+  const tripWith = (hostStatus: string, extra: Record<string, unknown> = {}) => ({
+    id: 'trip-1',
+    hostId: 'host-1',
+    status: 'OPEN',
+    title: 'Spiti',
+    capacity: 4,
+    includeTags: [],
+    excludeTags: [],
+    host: { id: 'host-1', name: 'Hana', trustScore: 50, homeCity: 'Pune', accountStatus: hostStatus },
+    ...extra,
+  });
+
+  function viewing(hostStatus: string, myMembership: Record<string, unknown> | null = null) {
+    const service = makeService(
+      {
+        trip: { findUnique: vi.fn().mockResolvedValue(tripWith(hostStatus)) },
+        tripMembership: {
+          count: vi.fn().mockResolvedValue(1),
+          findUnique: vi.fn().mockResolvedValue(myMembership),
+        },
+      },
+      {},
+      makeBlocks(),
+    );
+    return { service };
+  }
+
+  it.each(['SUSPENDED', 'BANNED'])("hides a %s host's trip from an outsider, as if it did not exist", async (status) => {
+    const { service } = viewing(status);
+    await expect(service.findById('trip-1', 'viewer')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('still shows the trip to someone already on it, or already asking to join', async () => {
+    for (const membership of [
+      { status: 'APPROVED', role: 'MEMBER' },
+      { status: 'REQUESTED', role: 'MEMBER' },
+    ]) {
+      const { service } = viewing('SUSPENDED', membership);
+      await expect(service.findById('trip-1', 'viewer')).resolves.toMatchObject({ id: 'trip-1' });
+    }
+  });
+
+  it("shows an active host's trip as before", async () => {
+    const { service } = viewing('ACTIVE');
+    await expect(service.findById('trip-1', 'viewer')).resolves.toMatchObject({ id: 'trip-1' });
+  });
+
+  it("never sends the host's account status to the client", async () => {
+    const { service } = viewing('ACTIVE');
+    const result = await service.findById('trip-1', 'viewer');
+    expect(result.host).not.toHaveProperty('accountStatus');
+    expect(result.host).toMatchObject({ id: 'host-1', name: 'Hana', trustScore: 50 });
+  });
+
+  it('refuses a join request to a suspended host with the same "not found", even for a trip that is not open', async () => {
+    const create = vi.fn();
+    const service = makeService({
+      trip: { findUnique: vi.fn().mockResolvedValue(tripWith('SUSPENDED', { status: 'COMPLETED' })) },
+      tripMembership: { create },
+    });
+    await expect(service.requestToJoin('trip-1', 'viewer')).rejects.toEqual(new NotFoundException('Trip not found'));
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('only offers trips whose host is in good standing in discovery', async () => {
+    const tripFindMany = vi.fn().mockResolvedValue([]);
+    const service = makeService({
+      user: { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'viewer', preferenceTags: [] }) },
+      tripMembership: { findMany: vi.fn().mockResolvedValue([]) },
+      trip: { findMany: tripFindMany },
+    });
+    await service.discover('viewer', {} as never);
+    expect(tripFindMany.mock.calls[0][0].where.host).toEqual({ accountStatus: 'ACTIVE' });
+  });
+
+  it('only shows a host the pending requests of people in good standing', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const service = makeService({
+      trip: { findUnique: vi.fn().mockResolvedValue({ id: 'trip-1', hostId: 'host-1' }) },
+      tripMembership: { findMany },
+    });
+    await service.listRequests('trip-1', 'host-1');
+    expect(findMany.mock.calls[0][0].where).toEqual({
+      tripId: 'trip-1',
+      status: 'REQUESTED',
+      user: { accountStatus: 'ACTIVE' },
+    });
+  });
+
+  describe('approving a request', () => {
+    function approving(requesterStatus: string) {
+      const trip = { id: 'trip-1', hostId: 'host-1', status: 'OPEN', title: 'Spiti', capacity: 4 };
+      const membership = { id: 'm-1', tripId: 'trip-1', userId: 'guest-1', status: 'REQUESTED' };
+      const update = vi.fn().mockResolvedValue(membership);
+      const userFindUnique = vi.fn().mockResolvedValue({ accountStatus: requesterStatus });
+      const service = makeService(
+        {
+          trip: { findUnique: vi.fn().mockResolvedValue(trip), update: vi.fn() },
+          tripMembership: {
+            findUnique: vi.fn().mockResolvedValue(membership),
+            count: vi.fn().mockResolvedValue(1),
+            update,
+          },
+          user: { findUnique: userFindUnique },
+        },
+        { notifyUser: vi.fn() },
+      );
+      return { service, update, userFindUnique };
+    }
+
+    it.each(['SUSPENDED', 'BANNED'])('refuses to approve someone who is %s, as if the request were gone', async (status) => {
+      const { service, update } = approving(status);
+      await expect(service.respondToRequest('trip-1', 'm-1', 'host-1', 'APPROVED')).rejects.toEqual(
+        new NotFoundException('Request not found'),
+      );
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to approve someone whose account no longer exists', async () => {
+      const { service, update, userFindUnique } = approving('ACTIVE');
+      userFindUnique.mockResolvedValue(null);
+      await expect(service.respondToRequest('trip-1', 'm-1', 'host-1', 'APPROVED')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it("still lets the host decline a suspended person's request, to tidy up", async () => {
+      const { service, update } = approving('SUSPENDED');
+      await service.respondToRequest('trip-1', 'm-1', 'host-1', 'REJECTED');
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }),
+      );
+    });
+
+    it('approves someone in good standing', async () => {
+      const { service, update } = approving('ACTIVE');
+      await service.respondToRequest('trip-1', 'm-1', 'host-1', 'APPROVED');
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) }),
+      );
+    });
   });
 });
