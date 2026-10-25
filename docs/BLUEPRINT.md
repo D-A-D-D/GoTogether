@@ -147,6 +147,8 @@ Core Modules ──publishes events──► Event queue (SQS/RabbitMQ)
 
 Module boundaries inside Core Modules are the seams to cut along if Chat or Matching ever need to become independent services (§10).
 
+*Abuse protection and production configuration, as built (2026-10-25).* Limits are layered by what they can fairly be keyed on. **Per address** (a generous default, tighter for sign-in, registration, session refresh and account export/delete) catches one machine hammering the API, but is kept loose because many people in the launch market share one public IP. **Per account** is the tight one: ten failed sign-ins in fifteen minutes lock that account for the window, whatever address they come from. **Per person** in chat, fifteen messages in ten seconds, because the HTTP throttler cannot see socket events. All three are in-process counters — correct for one instance, and to be moved to Redis with the chat backplane (§10). Behind a reverse proxy the client address is only trustworthy if the number of proxies is declared (`TRUST_PROXY`), so production refuses to start without it, and also without strong distinct JWT secrets, an https `WEB_ORIGIN` and the push keys. `/health` is liveness; `/health/ready` also checks the database. The session cookie is `HttpOnly; Secure; SameSite=Lax`, which is why the web app and the API must share a registrable domain. CI fails on any critical advisory in production dependencies.
+
 ## 08 — Trust & safety
 
 **Verification tiers**

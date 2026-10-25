@@ -11,6 +11,7 @@ import {
 } from '@nestjs/websockets';
 import type { Namespace, Server, Socket } from 'socket.io';
 import { AccountStateService } from '../auth/account-state.service.js';
+import { RateWindow } from '../common/rate-window.js';
 import { AccountStatus } from '../generated/prisma/index.js';
 import { BlocksService } from '../safety/blocks.service.js';
 import { ChatService } from './chat.service.js';
@@ -20,6 +21,11 @@ import { SendMessageDto } from './dto/send-message.dto.js';
 interface AuthedSocket extends Socket {
   data: { userId: string };
 }
+
+/** A person typing fast sends about one message a second; this leaves room for that and stops a flood. */
+export const CHAT_MESSAGES_PER_WINDOW = 15;
+export const CHAT_WINDOW_MS = 10_000;
+export const CHAT_TOO_FAST = 'You are sending messages too quickly - wait a moment and try again';
 
 function roomName(tripId: string): string {
   return `trip:${tripId}`;
@@ -38,6 +44,9 @@ function roomName(tripId: string): string {
 export class ChatGateway implements OnGatewayInit {
   @WebSocketServer()
   private server!: Server;
+
+  /** Messages sent per user, over all their trips. In memory, so per API instance. */
+  private readonly sendLimiter = new RateWindow(CHAT_MESSAGES_PER_WINDOW, CHAT_WINDOW_MS);
 
   constructor(
     private readonly jwt: JwtService,
@@ -97,6 +106,10 @@ export class ChatGateway implements OnGatewayInit {
         socket.disconnect(true);
         return { ok: false, error: 'This account is not available' };
       }
+      if (this.sendLimiter.isFull(socket.data.userId)) {
+        return { ok: false, error: CHAT_TOO_FAST };
+      }
+      this.sendLimiter.record(socket.data.userId);
       const message = await this.chatService.createMessage(dto.tripId, socket.data.userId, dto.content);
       await this.broadcast(dto.tripId, message);
       return { ok: true, message };

@@ -11,8 +11,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
+import { LIMITS } from '../common/throttle-limits.js';
 import { AuthService } from './auth.service.js';
+import { LoginAttemptsService } from './login-attempts.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { UsersService } from '../users/users.service.js';
@@ -28,6 +31,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
     private readonly config: ConfigService,
+    private readonly loginAttempts: LoginAttemptsService,
   ) {}
 
   private setRefreshCookie(res: Response, tokens: TokenPair) {
@@ -45,6 +49,7 @@ export class AuthController {
   }
 
   @Post('register')
+  @Throttle({ default: LIMITS.register })
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const { user, tokens } = await this.authService.register(dto.email, dto.password, dto.name);
     this.setRefreshCookie(res, tokens);
@@ -53,8 +58,18 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: LIMITS.login })
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const user = await this.authService.validateUser(dto.email, dto.password);
+    this.loginAttempts.assertAllowed(dto.email);
+    let user;
+    try {
+      user = await this.authService.validateUser(dto.email, dto.password);
+    } catch (error) {
+      // Only a wrong email or password counts - a database error shouldn't burn someone's attempts.
+      if (error instanceof UnauthorizedException) this.loginAttempts.recordFailure(dto.email);
+      throw error;
+    }
+    this.loginAttempts.recordSuccess(dto.email);
     const { tokens } = await this.authService.login(user);
     this.setRefreshCookie(res, tokens);
     return { user: this.usersService.toPublicProfile(user), accessToken: tokens.accessToken };
@@ -62,6 +77,7 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: LIMITS.refresh })
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const rawToken = req.cookies?.[REFRESH_COOKIE];
     if (!rawToken) {

@@ -1,4 +1,4 @@
-import { ChatGateway } from './chat.gateway.js';
+import { CHAT_MESSAGES_PER_WINDOW, CHAT_TOO_FAST, CHAT_WINDOW_MS, ChatGateway } from './chat.gateway.js';
 
 // The gateway's live broadcast, with a fake socket.io server. The point:
 // blocks must hide a message from the blocked person *live*, not just in
@@ -181,5 +181,59 @@ describe('ChatGateway — connection middleware', () => {
     const { socket, connect } = connecting('ACTIVE', { verifyError: new Error('jwt expired') });
     expect(await connect()).toEqual(new Error('Unauthorized'));
     expect(socket.data.userId).toBeUndefined();
+  });
+});
+
+describe('ChatGateway — message rate limit, pinned', () => {
+  it('allows 15 messages per person every 10 seconds', () => {
+    // Literals on purpose: a product decision, not something to move together with the test.
+    expect(CHAT_MESSAGES_PER_WINDOW).toBe(15);
+    expect(CHAT_WINDOW_MS).toBe(10_000);
+  });
+});
+
+describe('ChatGateway — message rate limit', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('lets a person send up to the limit in a window, then refuses the next without saving or broadcasting it', async () => {
+    const { send, chatService, sockets } = harness();
+    for (let i = 0; i < CHAT_MESSAGES_PER_WINDOW; i++) expect((await send()).ok).toBe(true);
+    const emitsBefore = sockets[1].emit.mock.calls.length;
+    expect(await send()).toEqual({ ok: false, error: CHAT_TOO_FAST });
+    expect(chatService.createMessage).toHaveBeenCalledTimes(CHAT_MESSAGES_PER_WINDOW);
+    expect(sockets[1].emit.mock.calls.length).toBe(emitsBefore);
+  });
+
+  it('lets them send again once the window has passed', async () => {
+    const { send } = harness();
+    for (let i = 0; i < CHAT_MESSAGES_PER_WINDOW; i++) await send();
+    expect((await send()).ok).toBe(false);
+    vi.advanceTimersByTime(CHAT_WINDOW_MS + 1);
+    expect((await send()).ok).toBe(true);
+  });
+
+  it('limits each person separately — one flooding does not silence the room', async () => {
+    const { send, gateway } = harness();
+    for (let i = 0; i < CHAT_MESSAGES_PER_WINDOW; i++) await send();
+    expect((await send()).ok).toBe(false);
+    const someoneElse = { data: { userId: 'friend' }, disconnect: vi.fn() };
+    const result = await gateway.onSendMessage(someoneElse as never, { tripId: 'trip-1', content: 'hi' } as never);
+    expect(result.ok).toBe(true);
+  });
+
+  it('counts across trips: the allowance is per person, not per room', async () => {
+    const { gateway, senderSocket } = harness();
+    for (let i = 0; i < CHAT_MESSAGES_PER_WINDOW; i++) {
+      await gateway.onSendMessage(senderSocket as never, { tripId: `trip-${i % 3}`, content: 'x' } as never);
+    }
+    const refused = await gateway.onSendMessage(senderSocket as never, { tripId: 'trip-99', content: 'x' } as never);
+    expect(refused).toEqual({ ok: false, error: CHAT_TOO_FAST });
+  });
+
+  it('checks the account first: a suspended person is cut off, not just told to slow down', async () => {
+    const { send, senderSocket } = harness({ restricted: ['sender'] });
+    expect(await send()).toEqual({ ok: false, error: 'This account is not available' });
+    expect(senderSocket.disconnect).toHaveBeenCalledWith(true);
   });
 });
