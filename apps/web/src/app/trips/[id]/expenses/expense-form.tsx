@@ -1,43 +1,43 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { ApiError, type CreateExpenseInput, type TripMember } from '@/lib/api';
+import { ApiError, type CreateExpenseInput, type Expense } from '@/lib/api';
 import { ErrorText, Label, PrimaryButton, Select, TextInput } from '@/components/form-controls';
+import { splitEqually, stateFromExpense, type FormMember } from './expense-split';
 
 const CATEGORIES = ['Food', 'Transport', 'Stay', 'Activities', 'Other'];
 
 const WHOLE_NUMBER = /^\d+$/;
 
-/**
- * Mirrors `ExpensesService.splitEqually` on the API: whole units only, with
- * the remainder handed out one unit at a time to the first people listed, so
- * the preview shown here is exactly what gets stored.
- */
-export function splitEqually(total: number, count: number): number[] {
-  const base = Math.floor(total / count);
-  let remainder = total - base * count;
-  return Array.from({ length: count }, () => {
-    const share = base + (remainder > 0 ? 1 : 0);
-    if (remainder > 0) remainder--;
-    return share;
-  });
-}
-
 interface ExpenseFormProps {
-  members: TripMember[];
+  members: FormMember[];
   meId: string;
   /** Rejects with an ApiError when the server refuses the expense. */
   onSubmit: (input: CreateExpenseInput) => Promise<void>;
+  /** Editing this expense rather than adding a new one: the form starts from it and keeps its values after saving. */
+  initial?: Expense;
+  /** Shown beside the save button, for forms that can be dismissed. */
+  onCancel?: () => void;
+  /** Keeps element ids unique when more than one form is on the page. */
+  idPrefix?: string;
 }
 
-export function ExpenseForm({ members, meId, onSubmit }: ExpenseFormProps) {
-  const [description, setDescription] = useState('');
-  const [amountText, setAmountText] = useState('');
-  const [category, setCategory] = useState('');
-  const [paidById, setPaidById] = useState(meId);
-  const [included, setIncluded] = useState<Set<string>>(() => new Set(members.map((m) => m.userId)));
-  const [custom, setCustom] = useState(false);
-  const [customText, setCustomText] = useState<Record<string, string>>({});
+function memberLabel(m: FormMember, meId: string): string {
+  if (m.userId === meId) return `${m.user.name} (you)`;
+  return m.left ? `${m.user.name} (left the trip)` : m.user.name;
+}
+
+export function ExpenseForm({ members, meId, onSubmit, initial, onCancel, idPrefix = 'expense' }: ExpenseFormProps) {
+  const start = initial ? stateFromExpense(initial, members) : null;
+  const [description, setDescription] = useState(start?.description ?? '');
+  const [amountText, setAmountText] = useState(start?.amountText ?? '');
+  const [category, setCategory] = useState(start?.category ?? '');
+  const [paidById, setPaidById] = useState(start?.paidById ?? meId);
+  const [included, setIncluded] = useState<Set<string>>(
+    () => new Set(start ? start.included : members.map((m) => m.userId)),
+  );
+  const [custom, setCustom] = useState(start?.custom ?? false);
+  const [customText, setCustomText] = useState<Record<string, string>>(start?.customText ?? {});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -107,14 +107,17 @@ export function ExpenseForm({ members, meId, onSubmit }: ExpenseFormProps) {
 
     try {
       await onSubmit(input);
-      // Paid-by and who's included carry over (batches of expenses are
-      // usually the same group); the rest would silently mislabel the next one.
-      setDescription('');
-      setAmountText('');
-      setCategory('');
-      setCustomText({});
+      // When adding, paid-by and who's included carry over (batches of expenses
+      // are usually the same group); the rest would silently mislabel the next
+      // one. An edit just closes, so it keeps what was saved.
+      if (!initial) {
+        setDescription('');
+        setAmountText('');
+        setCategory('');
+        setCustomText({});
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not add that expense.');
+      setError(err instanceof ApiError ? err.message : 'Could not save that expense.');
     } finally {
       setSubmitting(false);
     }
@@ -124,9 +127,9 @@ export function ExpenseForm({ members, meId, onSubmit }: ExpenseFormProps) {
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
         <div>
-          <Label htmlFor="expense-description">What was it for?</Label>
+          <Label htmlFor={`${idPrefix}-description`}>What was it for?</Label>
           <TextInput
-            id="expense-description"
+            id={`${idPrefix}-description`}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Dinner at the dhaba"
@@ -135,9 +138,9 @@ export function ExpenseForm({ members, meId, onSubmit }: ExpenseFormProps) {
           />
         </div>
         <div>
-          <Label htmlFor="expense-amount">Amount</Label>
+          <Label htmlFor={`${idPrefix}-amount`}>Amount</Label>
           <TextInput
-            id="expense-amount"
+            id={`${idPrefix}-amount`}
             value={amountText}
             onChange={(e) => setAmountText(e.target.value.trim())}
             inputMode="numeric"
@@ -149,31 +152,31 @@ export function ExpenseForm({ members, meId, onSubmit }: ExpenseFormProps) {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <Label htmlFor="expense-paid-by">Paid by</Label>
+          <Label htmlFor={`${idPrefix}-paid-by`}>Paid by</Label>
           <Select
-            id="expense-paid-by"
+            id={`${idPrefix}-paid-by`}
             value={paidById}
             onChange={(e) => setPaidById(e.target.value)}
             className="mt-1"
           >
             {members.map((m) => (
               <option key={m.userId} value={m.userId}>
-                {m.userId === meId ? `${m.user.name} (you)` : m.user.name}
+                {memberLabel(m, meId)}
               </option>
             ))}
           </Select>
         </div>
         <div>
-          <Label htmlFor="expense-category">Category (optional)</Label>
+          <Label htmlFor={`${idPrefix}-category`}>Category (optional)</Label>
           <TextInput
-            id="expense-category"
+            id={`${idPrefix}-category`}
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            list="expense-categories"
+            list={`${idPrefix}-categories`}
             maxLength={60}
             className="mt-1"
           />
-          <datalist id="expense-categories">
+          <datalist id={`${idPrefix}-categories`}>
             {CATEGORIES.map((c) => (
               <option key={c} value={c} />
             ))}
@@ -205,7 +208,7 @@ export function ExpenseForm({ members, meId, onSubmit }: ExpenseFormProps) {
                     onChange={() => toggleIncluded(m.userId)}
                     className="accent-accent"
                   />
-                  {m.userId === meId ? `${m.user.name} (you)` : m.user.name}
+                  {memberLabel(m, meId)}
                 </label>
                 {isIncluded &&
                   (custom ? (
@@ -230,9 +233,21 @@ export function ExpenseForm({ members, meId, onSubmit }: ExpenseFormProps) {
       {splitProblem && <p className="text-sm text-foreground/60">{splitProblem}</p>}
       <ErrorText>{error}</ErrorText>
 
-      <PrimaryButton type="submit" disabled={!valid || submitting}>
-        {submitting ? 'Adding…' : 'Add expense'}
-      </PrimaryButton>
+      <div className="flex items-center gap-4">
+        <PrimaryButton type="submit" disabled={!valid || submitting}>
+          {submitting ? 'Saving…' : initial ? 'Save changes' : 'Add expense'}
+        </PrimaryButton>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            className="text-sm text-foreground/60 underline hover:text-foreground disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
     </form>
   );
 }

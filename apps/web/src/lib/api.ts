@@ -379,12 +379,16 @@ export interface Expense {
   id: string;
   tripId: string;
   paidById: string;
+  /** Who entered it; null for expenses logged before that was recorded. */
+  createdById: string | null;
   description: string;
   amount: number;
   category: string | null;
   createdAt: string;
   paidBy: ExpenseUser;
   splits: ExpenseSplit[];
+  /** Whether *you* may still edit or delete it: you logged or paid it, and no share is marked paid yet. */
+  canChange: boolean;
 }
 
 export interface Balances {
@@ -411,6 +415,15 @@ export function listExpenses(tripId: string) {
 
 export function createExpense(tripId: string, input: CreateExpenseInput) {
   return apiFetch<Expense>(`/trips/${tripId}/expenses`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** Replaces the expense wholesale — same body as creating one. Leaving out who paid or who to split between keeps the current ones. */
+export function updateExpense(tripId: string, expenseId: string, input: CreateExpenseInput) {
+  return apiFetch<Expense>(`/trips/${tripId}/expenses/${expenseId}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+
+export function deleteExpense(tripId: string, expenseId: string) {
+  return apiFetch<{ id: string; deleted: true }>(`/trips/${tripId}/expenses/${expenseId}`, { method: 'DELETE' });
 }
 
 export function getBalances(tripId: string) {

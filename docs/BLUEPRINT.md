@@ -49,7 +49,7 @@ Twelve entities in five groups.
 
 **Interaction**
 - `ChatRoom` / `Message` — one room per trip, created on first approval. Membership mirrors approved `TripMembership` exactly.
-- `Expense` / `ExpenseSplit` — who paid, who owes what share. Produces a net-balance ledger per trip (§06 on why it doesn't move money itself).
+- `Expense` / `ExpenseSplit` — who paid, who logged it, who owes what share. Produces a net-balance ledger per trip (§06 on why it doesn't move money itself).
 - `Review` — one row per (trip, reviewer, reviewee) pair, only after trip completion, only between two approved members.
 
 **Safety**
@@ -111,6 +111,8 @@ Weights live in config, not code — the first thing worth A/B testing once ther
 **Group chat** — one room per trip, membership mirroring approved `TripMembership` exactly, created the moment the first member is approved. WebSocket gateway, stateless enough to run multiple instances behind a Redis pub/sub backplane. Message history writes to Postgres asynchronously (write-behind) so send never blocks on the durable store.
 
 **Expenses — a ledger, not a payment rail.** Expense/split rows produce a per-member net-balance view. "Settle up" records a claim, not a transfer — a deep link into the payer's own UPI app / PayPal.me, or a manual "mark as paid" the other party confirms.
+
+*As built (2026-10-25).* An expense can be edited or deleted by the person who logged it or the person who paid it, until any share is marked paid — after that the "settled" markers would no longer mean what their setters thought, so the fix is a correcting expense. An edit replaces the expense wholesale; people who have since left the trip may stay on an expense they were already part of, but nobody new from outside can be added. Adding, changing or deleting an expense, and marking a share paid, notifies the other people involved (never the actor). "Mark as paid" is currently unilateral by either side, not the other-party confirmation described above (IDEAS.md), and the payer cannot settle their own share.
 
 > **Regulatory scope flag.** The moment the app moves funds between users — even briefly holding a balance — it starts to look like a money transmitter in most jurisdictions, a licensing regime, not a feature. Keep v1 strictly a ledger with external settlement links. If in-app settlement becomes a real need, route through a licensed processor built for marketplace payouts (Stripe Connect, Razorpay Route).
 

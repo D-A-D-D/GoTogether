@@ -58,6 +58,7 @@ model User {
   blocksReceived   Block[]            @relation("BlockBlocked")
   sentMessages     Message[]
   expensesPaid     Expense[]          @relation("ExpensePaidBy")
+  expensesLogged   Expense[]          @relation("ExpenseCreatedBy")
   expenseSplits    ExpenseSplit[]     @relation("ExpenseSplitUser")
   reviewsGiven     Review[]           @relation("ReviewReviewer")
   reviewsReceived  Review[]           @relation("ReviewReviewee")
@@ -295,6 +296,11 @@ model Expense {
   trip        Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
   paidById    String
   paidBy      User   @relation("ExpensePaidBy", fields: [paidById], references: [id])
+  // Who entered it, which may not be who paid (you can log "Bob paid"). Together
+  // with the payer, these are the two people who may edit or delete it. Null on
+  // expenses logged before this column existed: only their payer can change them.
+  createdById String?
+  createdBy   User?  @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   description String
   amount      Int
   category    String?

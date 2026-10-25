@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { JwtAccessGuard } from '../auth/guards/jwt-access.guard.js';
 import { CurrentUser, type RequestUser } from '../auth/current-user.decorator.js';
 import { ExpensesService } from './expenses.service.js';
@@ -12,6 +12,22 @@ export class ExpensesController {
   @Post('expenses')
   create(@CurrentUser() user: RequestUser, @Param('tripId') tripId: string, @Body() dto: CreateExpenseDto) {
     return this.expensesService.create(tripId, user.userId, dto);
+  }
+
+  /** Replaces the expense with the body (same shape as creating one). Logger or payer only, until a share is marked paid. */
+  @Put('expenses/:expenseId')
+  update(
+    @CurrentUser() user: RequestUser,
+    @Param('tripId') tripId: string,
+    @Param('expenseId') expenseId: string,
+    @Body() dto: CreateExpenseDto,
+  ) {
+    return this.expensesService.update(tripId, expenseId, user.userId, dto);
+  }
+
+  @Delete('expenses/:expenseId')
+  remove(@CurrentUser() user: RequestUser, @Param('tripId') tripId: string, @Param('expenseId') expenseId: string) {
+    return this.expensesService.remove(tripId, expenseId, user.userId);
   }
 
   @Get('expenses')
