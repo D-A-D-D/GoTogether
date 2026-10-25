@@ -10,6 +10,9 @@ const GOOD = {
   VAPID_PUBLIC_KEY: 'BPublicKeyValue',
   VAPID_PRIVATE_KEY: 'PrivateKeyValue',
   VAPID_SUBJECT: 'mailto:team@gotogether.example',
+  EMAIL_PROVIDER: 'resend',
+  RESEND_API_KEY: 're_exampleKeyValue',
+  EMAIL_FROM: 'GoTogether <no-reply@gotogether.example>',
 };
 
 const without = (name: string) => {
@@ -26,7 +29,7 @@ describe('productionEnvProblems', () => {
     expect(productionEnvProblems({ NODE_ENV: nodeEnv })).toEqual([]);
   });
 
-  it.each(['DATABASE_URL', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'WEB_ORIGIN', 'TRUST_PROXY', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'])(
+  it.each(['DATABASE_URL', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'WEB_ORIGIN', 'TRUST_PROXY', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'RESEND_API_KEY', 'EMAIL_FROM'])(
     'reports a missing %s',
     (name) => {
       expect(productionEnvProblems(without(name)).join(' ')).toContain(`${name} is not set`);
@@ -61,6 +64,20 @@ describe('productionEnvProblems — secrets', () => {
   it('never puts a secret in the message', () => {
     const messages = productionEnvProblems({ ...GOOD, JWT_ACCESS_SECRET: 'tooShortSecret!' }).join(' ');
     expect(messages).not.toContain('tooShortSecret');
+  });
+});
+
+describe('productionEnvProblems — email', () => {
+  it.each(['log', 'smtp', '', undefined])('rejects EMAIL_PROVIDER=%s: only a real provider may run production', (provider) => {
+    expect(productionEnvProblems({ ...GOOD, EMAIL_PROVIDER: provider }).join(' ')).toMatch(/EMAIL_PROVIDER must be "resend"/);
+  });
+
+  it('explains why the log provider is refused', () => {
+    expect(productionEnvProblems({ ...GOOD, EMAIL_PROVIDER: 'log' }).join(' ')).toMatch(/reset links into the logs/);
+  });
+
+  it('does not put the API key in a message', () => {
+    expect(productionEnvProblems({ ...GOOD, RESEND_API_KEY: undefined, EMAIL_FROM: undefined }).join(' ')).not.toContain('re_exampleKeyValue');
   });
 });
 

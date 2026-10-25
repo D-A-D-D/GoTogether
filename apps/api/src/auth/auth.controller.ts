@@ -15,6 +15,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { LIMITS } from '../common/throttle-limits.js';
 import { AuthService } from './auth.service.js';
+import { CredentialsService } from './credentials.service.js';
 import { LoginAttemptsService } from './login-attempts.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -32,6 +33,7 @@ export class AuthController {
     private readonly usersService: UsersService,
     private readonly config: ConfigService,
     private readonly loginAttempts: LoginAttemptsService,
+    private readonly credentials: CredentialsService,
   ) {}
 
   private setRefreshCookie(res: Response, tokens: TokenPair) {
@@ -52,6 +54,8 @@ export class AuthController {
   @Throttle({ default: LIMITS.register })
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const { user, tokens } = await this.authService.register(dto.email, dto.password, dto.name);
+    // In the background, and never failing the sign-up: the person is in either way.
+    this.credentials.sendVerification(user);
     this.setRefreshCookie(res, tokens);
     return { user: this.usersService.toPublicProfile(user), accessToken: tokens.accessToken };
   }

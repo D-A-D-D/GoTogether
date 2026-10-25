@@ -29,6 +29,8 @@ export interface PublicUser {
   accountStatus: AccountStatus;
   /** False for an account that signed up with Google and never set one. */
   hasPassword: boolean;
+  /** When they confirmed their email address by following the link we sent; null until then. */
+  emailVerifiedAt: string | null;
   /** Only ever changed by an operator with database access — see apps/api/scripts/set-role.ts. */
   role: 'USER' | 'ADMIN';
   createdAt: string;
@@ -654,4 +656,25 @@ export interface DeleteAccountInput {
 /** Irreversible. The server refuses while you host a trip that hasn't finished. */
 export function deleteMyAccount(input: DeleteAccountInput) {
   return apiFetch<{ deleted: true }>('/users/me', { method: 'DELETE', body: JSON.stringify(input) });
+}
+
+// ---------- Password reset and email verification ----------
+
+/** Always succeeds, whether or not the address has an account — so it can't be used to find out. */
+export function requestPasswordReset(email: string) {
+  return apiFetch<{ ok: true }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+}
+
+/** `token` comes from the emailed link. Signs the account out everywhere. */
+export function resetPassword(token: string, password: string) {
+  return apiFetch<{ ok: true }>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) });
+}
+
+export function verifyEmailToken(token: string) {
+  return apiFetch<{ ok: true }>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) });
+}
+
+/** For a signed-in person who didn't get, or lost, the first email. */
+export function resendVerificationEmail() {
+  return apiFetch<{ alreadyVerified: boolean }>('/auth/resend-verification', { method: 'POST' });
 }

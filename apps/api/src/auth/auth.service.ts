@@ -111,6 +111,8 @@ export class AuthService {
         email: params.email,
         passwordHash: null,
         name: params.name,
+        // Google has already confirmed this address, so there's nothing left to verify.
+        emailVerifiedAt: new Date(),
       }));
 
     await this.prisma.oAuthAccount.create({

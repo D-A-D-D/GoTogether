@@ -152,7 +152,7 @@ Module boundaries inside Core Modules are the seams to cut along if Chat or Matc
 ## 08 — Trust & safety
 
 **Verification tiers**
-- Email — required to create an account.
+- Email — required to create an account. *As built (2026-10-25):* an address is *confirmed* by following a link we email (single-use, 24 hours, only a hash stored; or implicitly when signing up with Google), and the app shows a reminder until it is. Confirmation is not yet a gate on anything. The same mechanism carries password reset: a one-hour, single-use link whose request answers identically — and takes the same time — whether or not the address has an account, and whose use signs the account out everywhere. Links carry their token in the URL fragment, so it never reaches a server log.
 - Phone (SMS OTP) — required before hosting or joining a trip. The floor that makes reporting/suspension meaningful.
 - Government ID — optional, unlocks a "verified" badge via third-party KYC (Persona, Onfido, IDfy). Never store the raw ID image beyond the vendor's vaulted reference.
 

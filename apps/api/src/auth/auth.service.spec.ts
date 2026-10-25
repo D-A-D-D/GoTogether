@@ -74,3 +74,32 @@ describe('AuthService.validateUser', () => {
     expect((error as UnauthorizedException).message).toBe('Invalid email or password');
   });
 });
+
+describe('AuthService.findOrCreateOAuthUser — email verification', () => {
+  const params = { provider: 'google', providerAccountId: 'g-1', email: 'u@example.com', name: 'Una' };
+
+  function oauth(existing: Record<string, unknown> | null) {
+    const created = { id: 'new-1', email: 'u@example.com' };
+    const create = vi.fn().mockResolvedValue(created);
+    const users = { findByEmail: vi.fn().mockResolvedValue(existing), create };
+    const prisma = {
+      oAuthAccount: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({}) },
+    };
+    return { service: new AuthService(users as never, {} as never, prisma as never), create, prisma };
+  }
+
+  it('a brand-new account made through Google is already verified: Google has confirmed the address', async () => {
+    const { service, create } = oauth(null);
+    await service.findOrCreateOAuthUser(params);
+    expect(create.mock.calls[0][0].emailVerifiedAt).toBeInstanceOf(Date);
+    expect(create.mock.calls[0][0].passwordHash).toBeNull();
+  });
+
+  it('signing in with Google to an account that already exists creates nothing and verifies nothing', async () => {
+    const { service, create, prisma } = oauth({ id: 'old-1', email: 'u@example.com', emailVerifiedAt: null });
+    const user = await service.findOrCreateOAuthUser(params);
+    expect(create).not.toHaveBeenCalled();
+    expect(user).toMatchObject({ id: 'old-1', emailVerifiedAt: null });
+    expect(prisma.oAuthAccount.create).toHaveBeenCalledTimes(1); // linked, as before
+  });
+});

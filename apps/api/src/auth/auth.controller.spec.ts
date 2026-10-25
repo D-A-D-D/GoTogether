@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller.js';
 // asked, what counts as a failure, and what a correct password does.
 
 function harness(options: { validate?: () => Promise<unknown>; blocked?: boolean } = {}) {
+  const credentials = { sendVerification: vi.fn() };
   const user = { id: 'u1', email: 'una@example.com' };
   const validateUser = vi.fn(options.validate ?? (async () => user));
   const login = vi.fn().mockResolvedValue({ tokens: { accessToken: 'a', refreshToken: 'r', refreshExpiresAt: new Date() } });
@@ -20,11 +21,33 @@ function harness(options: { validate?: () => Promise<unknown>; blocked?: boolean
     { toPublicProfile: (u: unknown) => u } as never,
     { get: vi.fn() } as never,
     loginAttempts as never,
+    credentials as never,
   );
   const res = { cookie: vi.fn() };
   const signIn = () => controller.login({ email: 'una@example.com', password: 'pw' } as never, res as never);
-  return { signIn, validateUser, login, loginAttempts, res };
+  const register = authRegister(controller, res);
+  return { signIn, validateUser, login, loginAttempts, res, credentials, register };
 }
+
+function authRegister(controller: AuthController, res: { cookie: unknown }) {
+  return (service: { register: (...a: unknown[]) => Promise<unknown> }) => {
+    (controller as unknown as { authService: unknown }).authService = service;
+    return controller.register({ email: 'una@example.com', password: 'pw-long-enough', name: 'Una' } as never, res as never);
+  };
+}
+
+describe('AuthController.register — verification email', () => {
+  const created = { id: 'u1', email: 'una@example.com', name: 'Una', emailVerifiedAt: null };
+  const service = { register: vi.fn().mockResolvedValue({ user: created, tokens: { accessToken: 'a', refreshToken: 'r', refreshExpiresAt: new Date() } }) };
+
+  it('sends the new person a verification email, and still signs them in', async () => {
+    const { register, credentials, res } = harness();
+    const result = (await register(service)) as { accessToken: string };
+    expect(credentials.sendVerification).toHaveBeenCalledWith(created);
+    expect(result.accessToken).toBe('a');
+    expect(res.cookie).toHaveBeenCalled();
+  });
+});
 
 describe('AuthController.login — failed-attempt limit', () => {
   it('checks the limit before looking at the password at all', async () => {

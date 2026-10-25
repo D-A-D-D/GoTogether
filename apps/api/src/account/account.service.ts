@@ -201,6 +201,7 @@ export class AccountService {
       this.prisma.pushSubscription.deleteMany({ where: { userId } }),
       this.prisma.refreshToken.deleteMany({ where: { userId } }),
       this.prisma.oAuthAccount.deleteMany({ where: { userId } }),
+      this.prisma.emailToken.deleteMany({ where: { userId } }),
       this.prisma.block.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }),
       this.prisma.trustScoreEvent.deleteMany({ where: { userId } }),
       this.prisma.user.update({

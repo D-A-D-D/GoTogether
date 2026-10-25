@@ -36,6 +36,16 @@ describe('AppController (e2e)', () => {
     }
   });
 
+  it('has the password-reset routes, which refuse nonsense without touching anything', async () => {
+    const post = (path: string, body: object) => request(app.getHttpServer()).post(path).send(body);
+    await post('/auth/forgot-password', { email: 'not-an-email' }).expect(400);
+    await post('/auth/reset-password', { token: 'short', password: 'long-enough-password' }).expect(400);
+    await post('/auth/reset-password', { token: 'T'.repeat(43), password: 'short' }).expect(400);
+    await post('/auth/verify-email', { token: 'short' }).expect(400);
+    // Signed-in only: no session, no resend.
+    await request(app.getHttpServer()).post('/auth/resend-verification').expect(401);
+  });
+
   it('never rate limits the health checks the hosting platform polls', async () => {
     // More than the default allowance, so this fails if the exemption is ever lost.
     for (let i = 0; i < 320; i++) await request(app.getHttpServer()).get('/health').expect(200);

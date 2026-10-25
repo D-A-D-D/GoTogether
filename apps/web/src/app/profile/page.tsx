@@ -6,6 +6,7 @@ import { useRequireAuth } from '@/lib/use-require-auth';
 import { ApiError, getMe, getTags, updateMe, type PublicUser, type Tag } from '@/lib/api';
 import { Label, TextInput, TextArea, ErrorText, PrimaryButton } from '@/components/form-controls';
 import { AccountSettings } from './account-settings';
+import { EmailVerification } from './email-verification';
 import { BlockedPeople } from './blocked-people';
 import { PushSettings } from './push-settings';
 import { TrustHistory } from './trust-history';
@@ -112,6 +113,7 @@ export default function ProfilePage() {
 
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
+      <EmailVerification />
       <div className="flex items-baseline justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Your profile</h1>
         <div className="text-right">

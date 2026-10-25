@@ -23,7 +23,7 @@ export class UsersService {
     });
   }
 
-  create(data: { email: string; passwordHash: string | null; name: string }) {
+  create(data: { email: string; passwordHash: string | null; name: string; emailVerifiedAt?: Date }) {
     return this.prisma.user.create({ data });
   }
 

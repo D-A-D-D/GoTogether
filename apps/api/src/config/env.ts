@@ -55,6 +55,13 @@ export function productionEnvProblems(env: Env): string[] {
   if (!hops) problems.push('TRUST_PROXY is not set (the number of reverse proxies in front of the API, e.g. 1; 0 if none)');
   else if (!/^\d+$/.test(hops)) problems.push('TRUST_PROXY must be a whole number');
 
+  // Password reset and email verification are emails. The development "log" provider prints
+  // working links to the server log, so it must never be what production runs.
+  if (text(env.EMAIL_PROVIDER) !== 'resend') problems.push('EMAIL_PROVIDER must be "resend" (the "log" provider prints reset links into the logs)');
+  for (const name of ['RESEND_API_KEY', 'EMAIL_FROM']) {
+    if (!text(env[name])) problems.push(`${name} is not set`);
+  }
+
   const subject = text(env.VAPID_SUBJECT);
   if (!/^(mailto:|https:\/\/)/.test(subject)) problems.push('VAPID_SUBJECT must be a mailto: or https:// address');
 

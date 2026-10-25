@@ -46,6 +46,9 @@ model User {
   role             UserRole         @default(USER)
   // Set when the person deleted their account; see AccountStatus.DELETED.
   deletedAt        DateTime?
+  // When they proved they own the address, by following the link we emailed (or by
+  // signing in with Google, which has already verified it). Null until then.
+  emailVerifiedAt  DateTime?
 
   preferenceTags Tag[] @relation("UserPreferenceTags")
 
@@ -65,6 +68,7 @@ model User {
   reviewsGiven     Review[]           @relation("ReviewReviewer")
   reviewsReceived  Review[]           @relation("ReviewReviewee")
   pushSubscriptions PushSubscription[]
+  emailTokens       EmailToken[]
   reportsReviewed     Report[]           @relation("ReportReviewer")
   moderationsMade     ModerationAction[] @relation("ModerationActor")
   moderationsReceived ModerationAction[] @relation("ModerationTarget")
@@ -451,4 +455,24 @@ model Block {
   // "who has blocked me" is looked up by blocked user on every request that
   // filters on them.
   @@index([blockedId])
+}
+
+enum EmailTokenPurpose {
+  PASSWORD_RESET
+  EMAIL_VERIFICATION
+}
+
+/// A single-use link sent by email: to reset a password, or to verify an address.
+/// Only a hash is stored, so reading the table can't produce a working link.
+model EmailToken {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   EmailTokenPurpose
+  tokenHash String            @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime          @default(now())
+
+  @@index([userId, purpose])
 }

@@ -42,6 +42,7 @@ export function anonymisedProfile(userId: string, now: Date) {
     homeLat: null,
     homeLng: null,
     passwordHash: null,
+    emailVerifiedAt: null,
     role: UserRole.USER,
     accountStatus: AccountStatus.DELETED,
     deletedAt: now,

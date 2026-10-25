@@ -28,6 +28,7 @@ function harness(
     pushSubscription: { deleteMany: op('pushSubscription.deleteMany') },
     refreshToken: { deleteMany: op('refreshToken.deleteMany') },
     oAuthAccount: { deleteMany: op('oAuthAccount.deleteMany') },
+    emailToken: { deleteMany: op('emailToken.deleteMany') },
     block: { deleteMany: op('block.deleteMany') },
     trustScoreEvent: { deleteMany: op('trustScoreEvent.deleteMany') },
     $transaction: vi.fn(async (ops: unknown[]) => ops),
@@ -121,6 +122,7 @@ describe('AccountService.deleteAccount — what it does', () => {
       'pushSubscription.deleteMany',
       'refreshToken.deleteMany',
       'oAuthAccount.deleteMany',
+      'emailToken.deleteMany',
       'block.deleteMany',
       'trustScoreEvent.deleteMany',
       'user.update',
@@ -155,6 +157,7 @@ describe('AccountService.deleteAccount — what it does', () => {
     expect(find(ran(), 'pushSubscription.deleteMany').args.where).toEqual({ userId: 'u1' });
     expect(find(ran(), 'refreshToken.deleteMany').args.where).toEqual({ userId: 'u1' });
     expect(find(ran(), 'oAuthAccount.deleteMany').args.where).toEqual({ userId: 'u1' });
+    expect(find(ran(), 'emailToken.deleteMany').args.where).toEqual({ userId: 'u1' });
     expect(find(ran(), 'trustScoreEvent.deleteMany').args.where).toEqual({ userId: 'u1' });
     expect(find(ran(), 'block.deleteMany').args.where).toEqual({ OR: [{ blockerId: 'u1' }, { blockedId: 'u1' }] });
   });
@@ -167,6 +170,7 @@ describe('AccountService.deleteAccount — what it does', () => {
       name: 'Deleted user',
       email: 'deleted-u1@deleted.invalid',
       passwordHash: null,
+      emailVerifiedAt: null,
       accountStatus: 'DELETED',
       bio: null,
       homeLat: null,

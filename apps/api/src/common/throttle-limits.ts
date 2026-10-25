@@ -18,6 +18,13 @@ export const LIMITS = {
   register: { limit: 10, ttl: MINUTE_MS },
   /** The web app refreshes its session on every page load. */
   refresh: { limit: 60, ttl: MINUTE_MS },
+  /**
+   * Asking for an email to be sent (reset, resend verification). Loose, because many people can share
+   * one address; the limit that protects an inbox is per mailbox (3 an hour, in CredentialsService).
+   */
+  emailRequest: { limit: 30, ttl: HOUR_MS },
+  /** Using an emailed link. The links are 256-bit random, so this only trims noise. */
+  emailLink: { limit: 60, ttl: HOUR_MS },
   /** Heavy or destructive account actions: exporting data, deleting the account. */
   accountAction: { limit: 10, ttl: HOUR_MS },
 } as const;

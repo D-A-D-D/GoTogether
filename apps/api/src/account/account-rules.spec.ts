@@ -24,6 +24,7 @@ describe('anonymisedProfile — what is left of a deleted account', () => {
 
   it('clears the way to sign in', () => {
     expect(profile.passwordHash).toBeNull();
+    expect(profile.emailVerifiedAt).toBeNull();
     expect(profile.email).toBe('deleted-user-1@deleted.invalid');
   });
 
