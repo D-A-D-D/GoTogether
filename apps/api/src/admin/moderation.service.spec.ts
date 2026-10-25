@@ -69,6 +69,17 @@ describe('ModerationService.setAccountStatus — what a moderator may not do', (
     expect(transaction).not.toHaveBeenCalled();
   });
 
+  it.each(['SUSPENDED', 'ACTIVE'] as const)(
+    'cannot restrict or reinstate (%s) an account its owner deleted — there is no one left to act on',
+    async (status) => {
+      const { service, transaction } = harness({ target: { id: 'target-1', role: 'USER', accountStatus: 'DELETED' } });
+      await expect(service.setAccountStatus(admin, 'target-1', { status, reason: 'x' })).rejects.toEqual(
+        new ConflictException('This account has been deleted'),
+      );
+      expect(transaction).not.toHaveBeenCalled();
+    },
+  );
+
   it('refuses an unknown account', async () => {
     const { service } = harness({ target: null });
     await expect(service.setAccountStatus(admin, 'ghost', { status: 'SUSPENDED', reason: 'x' })).rejects.toBeInstanceOf(
@@ -369,6 +380,13 @@ describe('ModerationService.listReports', () => {
 });
 
 describe('ModerationService.listRestricted', () => {
+  it('leaves out accounts their owners deleted — there is nothing to reinstate', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const service = new ModerationService({ user: { findMany } } as never, {} as never);
+    await service.listRestricted();
+    expect(findMany.mock.calls[0][0].where.accountStatus.notIn).toContain('DELETED');
+  });
+
   it('lists accounts that are not active, with the latest decision on each', async () => {
     const findMany = vi.fn().mockResolvedValue([
       {
@@ -382,7 +400,7 @@ describe('ModerationService.listRestricted', () => {
     ]);
     const service = new ModerationService({ user: { findMany } } as never, {} as never);
     const result = await service.listRestricted();
-    expect(findMany.mock.calls[0][0].where).toEqual({ accountStatus: { not: 'ACTIVE' } });
+    expect(findMany.mock.calls[0][0].where).toEqual({ accountStatus: { notIn: ['ACTIVE', 'DELETED'] } });
     expect(result[0].lastDecision).toEqual({ reason: 'Harassment', createdAt: new Date('2026-10-02'), actor: { id: 'a', name: 'Adi' } });
     expect(result[1].lastDecision).toBeNull();
     expect(result[0]).not.toHaveProperty('moderationsReceived');

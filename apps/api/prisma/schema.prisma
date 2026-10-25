@@ -44,6 +44,8 @@ model User {
   // (apps/api/scripts/set-role.ts). A moderator can suspend people, so the way
   // to become one shouldn't be reachable from a request.
   role             UserRole         @default(USER)
+  // Set when the person deleted their account; see AccountStatus.DELETED.
+  deletedAt        DateTime?
 
   preferenceTags Tag[] @relation("UserPreferenceTags")
 
@@ -88,6 +90,10 @@ enum AccountStatus {
   ACTIVE
   SUSPENDED
   BANNED
+  // The person deleted their own account. The row stays (messages, expenses and
+  // reviews in other people's trips point at it) but every identifying field is
+  // scrubbed and it can never be signed in to or reinstated (BLUEPRINT section 09).
+  DELETED
 }
 
 model OAuthAccount {

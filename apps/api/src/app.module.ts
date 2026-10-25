@@ -11,6 +11,7 @@ import { ExpensesModule } from './expenses/expenses.module.js';
 import { ReviewsModule } from './reviews/reviews.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { SafetyModule } from './safety/safety.module.js';
+import { AccountModule } from './account/account.module.js';
 import { AdminModule } from './admin/admin.module.js';
 
 @Module({
@@ -26,6 +27,7 @@ import { AdminModule } from './admin/admin.module.js';
     ReviewsModule,
     NotificationsModule,
     SafetyModule,
+    AccountModule,
     AdminModule,
   ],
   controllers: [AppController],

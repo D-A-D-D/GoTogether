@@ -26,7 +26,9 @@ export interface PublicUser {
   homeRegion: string | null;
   trustScore: number;
   verificationTier: 'EMAIL' | 'PHONE' | 'ID';
-  accountStatus: 'ACTIVE' | 'SUSPENDED' | 'BANNED';
+  accountStatus: AccountStatus;
+  /** False for an account that signed up with Google and never set one. */
+  hasPassword: boolean;
   /** Only ever changed by an operator with database access — see apps/api/scripts/set-role.ts. */
   role: 'USER' | 'ADMIN';
   createdAt: string;
@@ -576,7 +578,7 @@ export function listBlockedUsers() {
 
 // ---------- Moderation (admins only) ----------
 
-export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'BANNED';
+export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'BANNED' | 'DELETED';
 export type ReportStatus = 'OPEN' | 'REVIEWING' | 'ACTIONED' | 'DISMISSED';
 
 export interface AdminReport {
@@ -600,7 +602,8 @@ export interface RestrictedUser {
   id: string;
   name: string;
   trustScore: number;
-  accountStatus: Exclude<AccountStatus, 'ACTIVE'>;
+  // A deleted account is never listed here: there's nothing left to reinstate.
+  accountStatus: Exclude<AccountStatus, 'ACTIVE' | 'DELETED'>;
   lastDecision: { reason: string; createdAt: string; actor: { id: string; name: string } } | null;
 }
 
@@ -633,4 +636,22 @@ export function setAccountStatus(userId: string, input: { status: AccountStatus;
 
 export function listRestrictedUsers() {
   return apiFetch<RestrictedUser[]>('/admin/users/restricted');
+}
+
+// ---------- Your data ----------
+
+/** Everything the app holds about you, as one document to save as a file. */
+export function exportMyData() {
+  return apiFetch<Record<string, unknown>>('/users/me/export');
+}
+
+/** Proof it's you: the password, or — for an account that has none — its email address. */
+export interface DeleteAccountInput {
+  password?: string;
+  confirmEmail?: string;
+}
+
+/** Irreversible. The server refuses while you host a trip that hasn't finished. */
+export function deleteMyAccount(input: DeleteAccountInput) {
+  return apiFetch<{ deleted: true }>('/users/me', { method: 'DELETE', body: JSON.stringify(input) });
 }

@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import { ApiError, getMe, getTags, updateMe, type PublicUser, type Tag } from '@/lib/api';
 import { Label, TextInput, TextArea, ErrorText, PrimaryButton } from '@/components/form-controls';
+import { AccountSettings } from './account-settings';
 import { BlockedPeople } from './blocked-people';
 import { PushSettings } from './push-settings';
 import { TrustHistory } from './trust-history';
@@ -198,6 +199,7 @@ export default function ProfilePage() {
       <PushSettings />
       <BlockedPeople />
       <TrustHistory />
+      <AccountSettings />
     </main>
   );
 }

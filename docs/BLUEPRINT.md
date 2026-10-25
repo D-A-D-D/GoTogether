@@ -171,6 +171,8 @@ Module boundaries inside Core Modules are the seams to cut along if Chat or Matc
 - **Right to export/delete** — GDPR/CCPA-style export and deletion. Chat/expense records tied to *other* users' trips can't simply vanish on one member's deletion — anonymize the departing user's identity in those rows instead.
 - **Retention for disputes** — expense/membership records need an explicit retention window past a delete request, long enough to resolve open disputes.
 
+*As built (2026-10-25).* **Export** is `GET /users/me/export`: a person's own data as one JSON document — profile, trips hosted, memberships, messages sent, each expense with only their own share, reviews they wrote, reviews about them only once revealed (the blind window holds for exports), trust history, reports they filed and blocks they made — leaving out the password hash, tokens, the precise geocode, other people's shares, reports about them and moderators' notes. **Deletion** follows the "anonymise, don't remove" line above: the account row is kept but scrubbed (name "Deleted user", a placeholder `@deleted.invalid` email, no location, password or role) and marked `DELETED`, so messages, expenses and reviews in other people's trips remain intact and every suspension check applies to it automatically. Their place on trips still open or under way is given up, a trip that was full because of them reopens, pending requests are withdrawn, and sessions, device notifications, blocks and trust history are deleted; finished trips keep their membership. It needs the password again (or the typed email, for a Google-only account) and is refused while the person hosts a trip that hasn't finished. **Retention for disputes**: none beyond the ledger rows themselves — no identity is kept after deletion — which is a default pending a legal view (ROADMAP Open decisions #12–#13).
+
 ## 10 — Scalability by stage
 
 | Concern | MVP | Growth | Scale |
@@ -222,6 +224,6 @@ Tracked live in [ROADMAP.md](ROADMAP.md#open-decisions). Summary:
 2. **Chat: build vs. buy** — default build (Socket.io+Redis); managed (Stream/Ably) trades cost for engineering time.
 3. **Backend language** — default TypeScript/NestJS; Go if the team has depth or chat/matching throughput bottlenecks.
 4. **In-app payments** — default defer; licensing decision, not a sprint.
-5. **Launch geography & currency scope** — not yet defaulted; changes the data model more than anything else here.
+5. **Launch geography & currency scope** — confirmed 2026-09-02: a single market and a single currency (amounts are whole units, no minor units). It changes the data model more than anything else here, so revisiting it later is expensive.
 6. **Native app wrapper** — default PWA-only through Phase 3; iOS Web Push needs 16.4+ and manual "Add to Home Screen."
 7. **Refresh-token rotation grace window** — default strict (a rotated token is rejected immediately). A refresh whose response never reaches the browser leaves the cookie holding a revoked token and forces a re-login; a short grace window fixes that at the cost of a few seconds of replay tolerance. A security-policy tradeoff, so it's an explicit call rather than a quiet change.

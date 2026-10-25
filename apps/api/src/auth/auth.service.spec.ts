@@ -30,7 +30,7 @@ describe('AuthService.login', () => {
     expect(issueTokenPair).toHaveBeenCalledWith('user-1', 'u@example.com');
   });
 
-  it.each(['SUSPENDED', 'BANNED'] as const)('refuses a %s account with a 403 and its own message, issuing nothing', async (status) => {
+  it.each(['SUSPENDED', 'BANNED', 'DELETED'] as const)('refuses a %s account with a 403 and its own message, issuing nothing', async (status) => {
     const { service, issueTokenPair } = harness();
     const error = await service.login(account(status) as never).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ForbiddenException);
@@ -52,7 +52,7 @@ describe('AuthService.refresh', () => {
     expect(issueTokenPair).toHaveBeenCalled();
   });
 
-  it.each(['SUSPENDED', 'BANNED'])('refuses to extend a %s account, with a 401 so the client just ends the session', async (status) => {
+  it.each(['SUSPENDED', 'BANNED', 'DELETED'])('refuses to extend a %s account, with a 401 so the client just ends the session', async (status) => {
     const { service, issueTokenPair } = harness(account(status));
     const error = await service.refresh('raw-token').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(UnauthorizedException);

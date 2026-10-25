@@ -1,6 +1,10 @@
 import { IsEnum, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { AccountStatus, ReportStatus } from '../../generated/prisma/index.js';
 
+// DELETED is something a person does to their own account (see the account module);
+// a moderator can restrict or reinstate, never delete.
+const MODERATOR_STATUSES = [AccountStatus.ACTIVE, AccountStatus.SUSPENDED, AccountStatus.BANNED];
+
 export class ListReportsDto {
   // Omitted: the open queue (OPEN and REVIEWING). Pass ACTIONED or DISMISSED for history.
   @IsOptional()
@@ -21,7 +25,7 @@ export class ReviewReportDto {
 }
 
 export class SetAccountStatusDto {
-  @IsEnum(AccountStatus)
+  @IsIn(MODERATOR_STATUSES)
   status!: AccountStatus;
 
   // Always required. It's the audit trail's whole point.

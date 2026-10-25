@@ -13,6 +13,8 @@ const BCRYPT_ROUNDS = 12;
 export const RESTRICTED_ACCOUNT_MESSAGES: Record<Exclude<AccountStatus, 'ACTIVE'>, string> = {
   SUSPENDED: 'This account has been suspended. If you think that is a mistake, please get in touch with us.',
   BANNED: 'This account has been closed.',
+  // Normally unreachable: a deleted account's email is scrubbed, so nothing signs in to it.
+  DELETED: 'This account has been deleted.',
 };
 
 @Injectable()

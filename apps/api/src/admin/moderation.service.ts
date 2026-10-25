@@ -153,6 +153,10 @@ export class ModerationService {
     if (target.role === UserRole.ADMIN) {
       throw new ForbiddenException("An admin's account can't be restricted here — change their role first");
     }
+    // Scrubbed and gone: there is nobody left to restrict or reinstate.
+    if (target.accountStatus === AccountStatus.DELETED) {
+      throw new ConflictException('This account has been deleted');
+    }
     if (target.accountStatus === dto.status) {
       throw new ConflictException(`This account is already ${dto.status.toLowerCase()}`);
     }
@@ -216,7 +220,7 @@ export class ModerationService {
   /** Accounts currently suspended or closed, with the latest decision on each. */
   async listRestricted() {
     const users = await this.prisma.user.findMany({
-      where: { accountStatus: { not: AccountStatus.ACTIVE } },
+      where: { accountStatus: { notIn: [AccountStatus.ACTIVE, AccountStatus.DELETED] } },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       take: QUEUE_LIMIT,
       select: {
