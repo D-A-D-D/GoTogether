@@ -33,13 +33,41 @@ sends it when the web app and the API are on the **same registrable domain**.
 - Good: `app.example.com` (web) and `api.example.com` (API). Or `example.com` + `api.example.com`.
 - **Broken, silently:** web on `something.vercel.app` and API on `something.fly.dev`. Sign-in would appear to work, but every page reload would log the person out, because the browser would refuse to send the cookie.
 
-So buy a domain first, and give both parts a name under it. (*Verified by test:* the cookie flags, in CI's container job. *Not verified:* the cross-subdomain behaviour on a real domain - check it in section 9.)
+So either put both parts under one domain you own (best, and needed for real email anyway), or - if you have no domain of your own yet - build the web app so that sign-in goes through its own address (section 2a). (*Verified by test:* the cookie flags, in CI's container job. *Not verified:* the cross-subdomain behaviour on a real domain - check it in section 9.)
 
 The API's `WEB_ORIGIN` must be the web app's exact origin (`https://app.example.com`, no trailing slash): it is the one origin allowed to call the API with credentials, and where Google sign-in would redirect back to.
 
+## 2a. No domain of your own: sign-in through the web app
+
+Free hosting gives each project a subdomain of the platform's own domain (`yourapp.vercel.app`, `yourapp.onrender.com`). Browsers treat each platform domain as a *public suffix*, so two projects on different ones are unrelated sites - the broken case above. For that situation the web app can carry the sign-in calls itself:
+
+- Build the web app with **both** `NEXT_PUBLIC_AUTH_VIA_WEB=true` and `NEXT_PUBLIC_API_URL=https://<your API address>`. Its `/auth/...` routes are then answered at the web app's own address and passed on to the API (`apps/web/next.config.ts`; the browser side is `apps/web/src/lib/endpoint.ts`). The session cookie is set on the web app's address, so it is first-party and survives reloads in every browser. Everything else (trips, profile, ...) still goes to the API directly with the access token, and chat connects straight to the API with its token, so only the small sign-in calls pass through the web host.
+- A build with the setting on but no usable API address **fails**, rather than ship a site whose sign-in goes nowhere.
+- `WEB_ORIGIN` on the API stays the web app's exact origin, as always.
+- *Verified (2026-10-29, on a development machine):* with the web app on `localhost` and the API on `127.0.0.1` - different sites to a browser - and the setting **off**, sign-in worked but a reload logged the person out (`/auth/refresh` answered 401: the cookie was never sent). With it **on**, the same steps stayed signed in after a reload, and logging out then reloading signed out. `scripts/smoke.mjs --auth-via-web --write` passed all 17 checks against that setup, and correctly failed against a web app with no `/auth` route. *Not verified:* any real host.
+
+Things to know:
+
+- **Rate limits see the web host.** For the relayed `/auth` calls the API sees the address of whatever relays them, not the person's. With `TRUST_PROXY=1` those calls (sign-in 10 a minute, sign-up 10 a minute) then share one allowance among *everyone* - fine for an alpha, a bottleneck past a few dozen people. `TRUST_PROXY=2` would use each person's real address (if the platforms forward it - unverified), but lets someone who calls the API directly forge theirs and dodge the per-address limits (the per-account sign-in lock still holds). Start with `1`.
+- **Waking a sleeping API.** On a free tier that sleeps, the first call after a quiet spell can take most of a minute, and the web host's relay may give up sooner: the first sign-in of the day can fail and then succeed on a retry. Calls that go straight to the API simply wait.
+- **Email.** Sending real email needs a domain you own, with SPF/DKIM records added; you cannot add DNS records to a platform subdomain. Until you have one, password-reset and verification emails will not reach other people. That is tolerable for an alpha among friends (reset a password by hand) and not for strangers.
+- **Google sign-in** (the API has it; the web app does not offer it yet): set `GOOGLE_CALLBACK_URL` to `https://<web address>/auth/google/callback` and register that same address with Google, so the cookie it sets also lands on the web app's address.
+- **Moving to a real domain later:** drop the setting (rebuild the web app without it) or keep it. Either way everyone is signed in again once, at the switch.
+
+## 2b. What free hosting actually gives you
+
+*Researched 2026-10-29 from third-party comparison articles that disagree on details, plus Vercel's own policy page. Confirm every figure on the provider's pricing page before relying on it.*
+
+- **No free tier reliably runs an always-on WebSocket server.** The API needs one for live chat.
+- **Render** free web service: sleeps after about 15 minutes without traffic, so the first request is slow and live chat connections do not survive it. One source reports a plan change in April 2026 that cut free bandwidth sharply. A paid always-on instance is reported at about US$7 a month. Render offers a Singapore region (confirm), which matches the database region below.
+- **Vercel** Hobby (free): restricted by Vercel's fair-use rules to personal, **non-commercial** use. Fine for an alpha among friends; a public product needs Pro (or another host for the web app).
+- **Fly.io**: no free tier for new accounts. **Koyeb**: sources conflict; reportedly a card is now required.
+
+So, in practice: **a $0 setup is a private alpha** - API on Render free, web on Vercel Hobby, database on Neon free, sign-in through the web app (2a). **A public launch costs a little:** an always-on API instance, a domain you own (for email and a clean URL), and a plan for the web app that allows commercial use.
+
 ## 3. Accounts to create
 
-- A **domain** and access to its DNS.
+- A **domain** and access to its DNS. (Optional for a private alpha - see 2a - but needed for real email and before inviting strangers.)
 - **Neon** (exists). Decide the region - see section 5.
 - **Resend**: an API key, and the domain you will send from verified with them (they give you SPF/DKIM DNS records to add). (The API's Resend adapter has been pointed at Resend's real service with a deliberately fake key and was answered "API key is invalid" (401) - so its address, method and authorisation header are understood. The message body format is still unproven until a real key sends a real email.)
 - **Vercel** (web) and a **container host** (API).
@@ -91,10 +119,11 @@ The development secrets in your local `.env` are too short and are rejected in p
 | Variable | When | What it is |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | **at build time** | The API's public address, e.g. `https://api.example.com`. It is baked into the build, so changing it means rebuilding. |
+| `NEXT_PUBLIC_AUTH_VIA_WEB` | at build time, optional | `true` when the web app and API are on unrelated domains (free platform subdomains): sign-in then goes through the web app's own address. Needs `NEXT_PUBLIC_API_URL` too. See section 2a. |
 
 ## 5. The database
 
-- **Region.** The Neon project is currently in `us-east-2` (Ohio). If most users are in India, every request pays that round trip, several times over for a page that makes several calls. Run the API in the **same region as the database**, and decide *before launch* whether the database should move closer to your users: moving later means a data migration.
+- **Region.** Decided 2026-10-29: the first market is India, so create the **production** database in Singapore (`aws-ap-southeast-1`) - Neon's regions page, as read that day, lists no Mumbai region (recheck). Production is a *new, empty* Neon project: the migrations build it from nothing (CI proves exactly that against an empty Postgres), so there is no data to move. The Ohio (`us-east-2`) project stays for development. Run the API in the **same region as the database** (Singapore); a page makes several calls, and each one pays the distance.
 - **Pooled vs direct.** App traffic uses the pooled URL; migrations use the direct one. Using the pooled URL for migrations fails.
 - **Cold starts.** On Neon's free tier the database suspends when idle and the first requests after a wake-up can fail with `Can't reach database server` (seen repeatedly during development). `/health/ready` reports it (503). For production use a plan that does not suspend the compute, or accept that the first visitor after quiet periods will see errors.
 - **Backups.** Neon provides point-in-time restore, with a retention window that depends on the plan. Find out what yours is, and **practise one restore** before launch: a backup you have never restored is a hope, not a backup.
@@ -162,6 +191,10 @@ node scripts/smoke.mjs --api https://api.example.com --web https://app.example.c
 # password, the profile, renewing the session, a reset request - then it deletes the account.
 # Use a mailbox you control: the verification email goes there. Leaves one anonymous "Deleted user" row.
 node scripts/smoke.mjs --api https://api.example.com --web https://app.example.com   --write --email you+smoke@example.com
+
+# when the web app was built with NEXT_PUBLIC_AUTH_VIA_WEB=true (section 2a), add --auth-via-web: the sign-in
+# calls are then sent to the web app's address, as its pages do, which also checks the relay and the cookie through it
+node scripts/smoke.mjs --api https://yourapi.onrender.com --web https://yourapp.vercel.app --auth-via-web --write --email you+smoke@example.com
 ```
 
 It exits non-zero and says what is wrong in plain words ("the API does not allow the web origin ... is WEB_ORIGIN set to exactly that?", "the web app's scripts do not mention the API address ... was it built with NEXT_PUBLIC_API_URL set?", "the database cannot be reached"). It checks: the API is alive and **ready** (it can reach the database); security headers and a request id on every response, and no `X-Powered-By`; CORS allows the web origin with credentials and nobody else; a protected route refuses a caller with no session; the web pages load, carry their security headers, and serve the manifest and service worker; the web build points at this API; and (with `--write`) the session cookie is `HttpOnly; Secure; SameSite=Lax`, a wrong password is refused, the profile never includes the password hash, the session can be renewed, a reset request gets the neutral answer, and the deleted account can no longer sign in.

@@ -1,4 +1,11 @@
+import { endpointUrl } from './endpoint';
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
+// Sign-in through this site's own address instead of the API's, for deployments where the two
+// are on unrelated domains. Both halves are fixed at build time: see next.config.ts.
+const AUTH_VIA_WEB = process.env.NEXT_PUBLIC_AUTH_VIA_WEB === 'true';
+const urlFor = (path: string) => endpointUrl(path, { apiUrl: API_URL, authViaWeb: AUTH_VIA_WEB });
 
 export class ApiError extends Error {
   constructor(
@@ -64,7 +71,7 @@ export function onSessionExpired(callback: () => void): void {
 }
 
 async function rawFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${API_URL}${path}`, {
+  return fetch(urlFor(path), {
     ...init,
     credentials: 'include',
     headers: {
@@ -104,7 +111,7 @@ export function refreshSession(): Promise<PublicUser | null> {
 }
 
 async function requestRefresh(): Promise<PublicUser | null> {
-  const res = await fetch(`${API_URL}/auth/refresh`, { method: 'POST', credentials: 'include' });
+  const res = await fetch(urlFor('/auth/refresh'), { method: 'POST', credentials: 'include' });
   if (!res.ok) return null;
   const data = (await res.json()) as AuthResponse;
   accessToken = data.accessToken;

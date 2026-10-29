@@ -7,6 +7,9 @@
 //   --api         the API's address (required)
 //   --web         the web app's address: also checks its headers, its pages, and that it was built pointing at the API
 //   --web-origin  just the web app's origin, for the CORS check, when the web app itself isn't being checked
+//   --auth-via-web  the web app was built with NEXT_PUBLIC_AUTH_VIA_WEB=true (sign-in goes through the web app's
+//                 own address, for when it and the API are on unrelated domains): the /auth calls below are sent to
+//                 --web instead of --api, which also proves the relay and the session cookie work through it.
 //   --write       also signs up a throwaway account, exercises sign-in, the session cookie, refresh and a password
 //                 reset request, then deletes the account. Needs --email: the verification email goes there, so
 //                 use a mailbox you control (an address like you+smoke@your-domain works). Leaves one anonymous
@@ -21,6 +24,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   checkApiHeaders,
+  checkAuthReachesApi,
   checkCors,
   checkSessionCookie,
   checkWebHeaders,
@@ -45,8 +49,13 @@ const WEB = arg('web') ? origin(arg('web')) : undefined;
 const WEB_ORIGIN = arg('web-origin') ? origin(arg('web-origin')) : WEB;
 const WRITE = flag('write');
 const EMAIL = arg('email');
+const AUTH_VIA_WEB = flag('auth-via-web');
 if (WRITE && !EMAIL) {
   console.error('--write needs --email <a mailbox you control>');
+  process.exit(2);
+}
+if (AUTH_VIA_WEB && !WEB) {
+  console.error('--auth-via-web needs --web <url>');
   process.exit(2);
 }
 
@@ -69,8 +78,9 @@ async function step(name, fn) {
 }
 
 const expectStatus = (res, wanted, what) => (res.status === wanted ? [] : [`${what}: expected ${wanted}, got ${res.status}`]);
-const json = (method, path, body, extra = {}) =>
-  fetch(API + path, {
+// With sign-in via the web app, the /auth routes are called on the web app's address, as its pages do.
+const json = (method, path, body, extra = {}, base = AUTH_VIA_WEB && path.startsWith('/auth/') ? WEB : API) =>
+  fetch(base + path, {
     method,
     headers: { 'content-type': 'application/json', ...extra },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -98,7 +108,7 @@ await step('API: security headers, request id, no X-Powered-By', async () => che
 if (WEB_ORIGIN) {
   await step('API: CORS allows the web origin (with credentials), and nobody else', async () => {
     const preflight = (from) =>
-      json('OPTIONS', '/auth/login', undefined, { origin: from, 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' });
+      json('OPTIONS', '/auth/login', undefined, { origin: from, 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' }, API);
     const stranger = 'https://not-the-web-app.example';
     const ok = await preflight(WEB_ORIGIN);
     const other = await preflight(stranger);
@@ -139,6 +149,13 @@ if (WEB) {
     if (worker.ok && !/javascript/.test(worker.headers.get('content-type') ?? '')) problems.push('/sw.js is not served as JavaScript');
     return problems;
   });
+
+  if (AUTH_VIA_WEB) {
+    await step('Web: sign-in is relayed to the API (NEXT_PUBLIC_AUTH_VIA_WEB)', async () => {
+      const res = await json('POST', '/auth/login', { email: 'smoke-nobody@example.invalid', password: 'not-a-real-password' });
+      return checkAuthReachesApi({ status: res.status, contentType: res.headers.get('content-type') });
+    });
+  }
 
   await step('Web: it was built pointing at this API (NEXT_PUBLIC_API_URL)', async () => {
     const page = await fetch(WEB + '/login', { signal: AbortSignal.timeout(30_000) });

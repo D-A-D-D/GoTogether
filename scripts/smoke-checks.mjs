@@ -78,6 +78,19 @@ export function checkWebPointsAtApi(scriptTexts, apiOrigin) {
   return problems;
 }
 
+/**
+ * With sign-in via the web app (NEXT_PUBLIC_AUTH_VIA_WEB), a wrong-password sign-in sent to the
+ * web app's own address must come back from the API: a 401 with a JSON body. The usual ways it
+ * goes wrong are the web build having been made without the setting (the web app answers 404 with
+ * a page), or with a wrong API address (a gateway error).
+ */
+export function checkAuthReachesApi({ status, contentType }) {
+  if (status === 401 && /json/i.test(contentType ?? '')) return [];
+  if (status === 404) return ['the web app has no /auth route - was it built with NEXT_PUBLIC_AUTH_VIA_WEB=true?'];
+  if (status >= 500) return [`the web app could not reach the API for /auth (it answered ${status}) - is NEXT_PUBLIC_API_URL right in the web build?`];
+  return [`a wrong-password sign-in through the web app should come back 401 from the API, got ${status}${contentType ? ` (${contentType})` : ''}`];
+}
+
 /** The script URLs on a page, resolved against the page's address. */
 export function scriptUrls(html, pageUrl) {
   const urls = [];

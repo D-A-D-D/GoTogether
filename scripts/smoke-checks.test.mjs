@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   checkApiHeaders,
+  checkAuthReachesApi,
   checkCors,
   checkSessionCookie,
   checkWebHeaders,
@@ -134,5 +135,29 @@ describe('scriptUrls', () => {
   it('finds scripts and resolves them against the page', () => {
     const html = '<script src="/_next/static/a.js" async></script><script>inline()</script><script src="https://cdn.example/b.js"></script>';
     assert.deepEqual(scriptUrls(html, 'https://app.example.com/login'), ['https://app.example.com/_next/static/a.js', 'https://cdn.example/b.js']);
+  });
+});
+
+describe('checkAuthReachesApi', () => {
+  it('accepts the 401 from the API itself, relayed as JSON', () => {
+    assert.deepEqual(checkAuthReachesApi({ status: 401, contentType: 'application/json; charset=utf-8' }), []);
+  });
+
+  it('points at the build setting when the web app has no /auth route', () => {
+    assert.match(checkAuthReachesApi({ status: 404, contentType: 'text/html' })[0], /NEXT_PUBLIC_AUTH_VIA_WEB/);
+  });
+
+  it('points at the API address when the relay cannot reach the API', () => {
+    for (const status of [500, 502, 504]) assert.match(checkAuthReachesApi({ status, contentType: 'text/plain' })[0], /NEXT_PUBLIC_API_URL/, String(status));
+  });
+
+  it('does not accept a 401 that is not JSON (a login page, or a refusal from a gateway)', () => {
+    assert.equal(checkAuthReachesApi({ status: 401, contentType: 'text/html' }).length, 1);
+    assert.equal(checkAuthReachesApi({ status: 401, contentType: undefined }).length, 1);
+  });
+
+  it('does not accept a sign-in that succeeds or is rate limited as proof of a working relay', () => {
+    assert.equal(checkAuthReachesApi({ status: 200, contentType: 'application/json' }).length, 1);
+    assert.equal(checkAuthReachesApi({ status: 429, contentType: 'application/json' }).length, 1);
   });
 });
