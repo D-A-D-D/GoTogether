@@ -1,0 +1,24 @@
+# What is left out of the Docker build context (the repository root). Keeps the
+# image small and, more importantly, keeps secrets and local state out of it.
+
+**/node_modules
+**/dist
+**/.next
+.git
+.github
+.claude
+docs
+
+# Never bake configuration into an image. (The example file is fine, and harmless.)
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local scratch files, and a Prisma client generated on a developer's machine -
+# the image generates its own, for its own operating system.
+**/tmp-*
+apps/api/src/generated
+
+# The web app is deployed separately; only its package.json is needed, so npm can read the workspace.
+apps/web/*
+!apps/web/package.json

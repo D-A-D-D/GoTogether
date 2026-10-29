@@ -64,3 +64,126 @@ jobs:
       - name: E2E test — api
         run: npm run test:e2e
         working-directory: apps/api
+
+  # The API as a container: builds the image and runs it the way a host would,
+  # against a real Postgres, so a broken Dockerfile (or a native-engine mismatch,
+  # a missing migration, a root user) fails here and not on deploy day.
+  container:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gotogether
+          POSTGRES_PASSWORD: gotogether
+          POSTGRES_DB: gotogether
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gotogether"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the API image
+        run: docker build -f apps/api/Dockerfile -t gotogether-api .
+
+      - name: A production start with no configuration is refused
+        run: |
+          set +e
+          output=$(docker run --rm gotogether-api 2>&1)
+          code=$?
+          echo "$output" | tail -12
+          [ "$code" -ne 0 ] || { echo "expected a non-zero exit"; exit 1; }
+          echo "$output" | grep -q "not safe to start" || { echo "expected the configuration error"; exit 1; }
+
+      - name: Write a sound production environment
+        # Throwaway values for this job only. The Resend key is not real: registering sends a
+        # verification email in the background, which must fail quietly without failing sign-up.
+        run: |
+          secret() { openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n'; }
+          {
+            echo "DATABASE_URL=postgresql://gotogether:gotogether@localhost:5432/gotogether?schema=public"
+            echo "DATABASE_URL_DIRECT=postgresql://gotogether:gotogether@localhost:5432/gotogether?schema=public"
+            echo "JWT_ACCESS_SECRET=$(secret)"
+            echo "JWT_REFRESH_SECRET=$(secret)"
+            echo "WEB_ORIGIN=https://app.example.test"
+            echo "TRUST_PROXY=1"
+            echo "PORT=3001"
+            echo "EMAIL_PROVIDER=resend"
+            echo "RESEND_API_KEY=ci-not-a-real-key"
+            echo "EMAIL_FROM=GoTogether <no-reply@example.test>"
+            echo "VAPID_SUBJECT=mailto:ci@example.com"
+            echo "VAPID_PUBLIC_KEY=BAfybIdajMt-ce29lEo8ituEVH1cVNzthSOr_z_rnW87gO-RlmnCnf_mH-lmXQIYzfTZf9O8D6dXUyyX3ImoI3k"
+            echo "VAPID_PRIVATE_KEY=IPtOAOrVEd18ttCqzLkEim03hS9GhBi6_-L-kDf7zTQ"
+          } > "$RUNNER_TEMP/api.env"
+
+      - name: Apply the migrations from inside the image
+        run: docker run --rm --network host --env-file "$RUNNER_TEMP/api.env" gotogether-api npx prisma migrate deploy
+
+      - name: Start the API
+        run: docker run -d --name api --network host --env-file "$RUNNER_TEMP/api.env" gotogether-api
+
+      - name: Wait until it is ready (it can reach the database)
+        run: |
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/health/ready || true)
+            [ "$code" = "200" ] && exit 0
+            sleep 2
+          done
+          echo "never became ready (last status: $code)"
+          exit 1
+
+      - name: Smoke test
+        run: |
+          set -e
+          base=http://localhost:3001
+
+          echo "-- liveness, and the hardening headers"
+          curl -fsS "$base/health" | jq -e '.status == "ok"'
+          headers=$(curl -sI "$base/health")
+          echo "$headers" | grep -qi '^x-content-type-options: nosniff' || { echo "missing nosniff"; exit 1; }
+          echo "$headers" | grep -qi '^strict-transport-security' || { echo "missing HSTS"; exit 1; }
+          if echo "$headers" | grep -qi '^x-powered-by'; then echo "X-Powered-By is exposed"; exit 1; fi
+
+          echo "-- register, sign in, read the profile"
+          status=$(curl -s -o "$RUNNER_TEMP/register.json" -w '%{http_code}' -X POST "$base/auth/register" \
+            -H 'content-type: application/json' \
+            -d '{"email":"ci-smoke@example.com","password":"a-long-enough-passphrase","name":"CI Smoke"}')
+          [ "$status" = "201" ] || { echo "register returned $status"; cat "$RUNNER_TEMP/register.json"; exit 1; }
+          curl -s -D "$RUNNER_TEMP/login.headers" -o "$RUNNER_TEMP/login.json" -X POST "$base/auth/login" \
+            -H 'content-type: application/json' \
+            -d '{"email":"ci-smoke@example.com","password":"a-long-enough-passphrase"}'
+          token=$(jq -r .accessToken "$RUNNER_TEMP/login.json")
+          [ -n "$token" ] && [ "$token" != "null" ] || { echo "no access token"; cat "$RUNNER_TEMP/login.json"; exit 1; }
+          cookie=$(grep -i '^set-cookie: gt_refresh' "$RUNNER_TEMP/login.headers")
+          echo "$cookie" | grep -q 'HttpOnly' || { echo "cookie is not HttpOnly"; exit 1; }
+          echo "$cookie" | grep -q 'Secure' || { echo "cookie is not Secure in production"; exit 1; }
+          echo "$cookie" | grep -q 'SameSite=Lax' || { echo "cookie is not SameSite=Lax"; exit 1; }
+          curl -fsS "$base/users/me" -H "authorization: Bearer $token" | jq -e '.email == "ci-smoke@example.com" and .hasPassword == true and (has("passwordHash") | not)'
+
+          echo "-- a wrong password is refused"
+          status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/auth/login" -H 'content-type: application/json' \
+            -d '{"email":"ci-smoke@example.com","password":"not-the-password"}')
+          [ "$status" = "401" ] || { echo "wrong password returned $status"; exit 1; }
+
+          echo "-- the process does not run as root"
+          uid=$(docker exec api id -u)
+          [ "$uid" != "0" ] || { echo "running as root"; exit 1; }
+          echo "uid $uid"
+
+      - name: It shuts down gracefully when told to
+        run: |
+          docker stop -t 15 api
+          code=$(docker inspect -f '{{.State.ExitCode}}' api)
+          echo "exit code $code"
+          # 137 means it ignored SIGTERM and was killed.
+          [ "$code" != "137" ] || { echo "did not shut down within 15s"; exit 1; }
+
+      - name: Container log (always)
+        if: always()
+        run: |
+          docker logs api 2>&1 | tail -60 || true
+          docker image ls gotogether-api
