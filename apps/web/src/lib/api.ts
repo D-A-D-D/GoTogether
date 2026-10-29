@@ -110,9 +110,27 @@ export function refreshSession(): Promise<PublicUser | null> {
   return inFlightRefresh;
 }
 
+/**
+ * Asks the API for a health answer straight (not through the sign-in relay) and waits as long
+ * as it takes: a free-tier API that has gone to sleep needs up to a minute to wake, and the
+ * relay may give up sooner than that.
+ */
+async function wakeApi(): Promise<void> {
+  await fetch(`${API_URL}/health`, { signal: AbortSignal.timeout(90_000) }).catch(() => undefined);
+}
+
+/** A reply that means "the API wasn't there", as opposed to "the session is no good". */
+const isUnavailable = (status: number) => status === 502 || status === 503 || status === 504;
+
 async function requestRefresh(): Promise<PublicUser | null> {
-  const res = await fetch(urlFor('/auth/refresh'), { method: 'POST', credentials: 'include' });
-  if (!res.ok) return null;
+  const attempt = () => fetch(urlFor('/auth/refresh'), { method: 'POST', credentials: 'include' });
+  let res: Response | null = await attempt().catch(() => null);
+  if (res === null || isUnavailable(res.status)) {
+    // Probably a sleeping API, not a bad session: wake it, then try once more.
+    await wakeApi();
+    res = await attempt().catch(() => null);
+  }
+  if (res === null || !res.ok) return null;
   const data = (await res.json()) as AuthResponse;
   accessToken = data.accessToken;
   return data.user;
