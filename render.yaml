@@ -1,0 +1,59 @@
+# Render Blueprint for the GoTogether API (docs/DEPLOYMENT.md, section 6b).
+# In Render: New > Blueprint > pick this repository. It creates the service below and asks for
+# every variable marked "sync: false"; nothing secret is stored in this file.
+#
+# Not verified on Render yet - the first deploy is the test. Free plan: the service sleeps after
+# about 15 minutes idle, and migrations are not run for you (free services have no pre-deploy
+# step), so apply them yourself before the first start and after any release that adds one:
+#   cd apps/api && DATABASE_URL_DIRECT="<direct string>" npx prisma migrate deploy
+services:
+  - type: web
+    name: gotogether-api
+    runtime: docker
+    plan: free # switch to "starter" for an always-on instance (live chat needs it)
+    region: singapore # same region as the Neon database
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health/ready
+    # Exactly one instance: chat and the rate limiters are in memory (DEPLOYMENT.md section 8).
+    numInstances: 1
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      # Render sits one proxy in front of the app. If the web app relays sign-in (section 2a) see
+      # the note there about the shared allowance.
+      - key: TRUST_PROXY
+        value: "1"
+      # Render makes these two up and keeps them; they must differ, and they do.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # The web app's exact origin, e.g. https://yourapp.vercel.app (no trailing slash).
+      - key: WEB_ORIGIN
+        sync: false
+      # Neon, Singapore project: the pooled string here, the direct one for migrations.
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_DIRECT
+        sync: false
+      # Production refuses to start without email settings. Without a domain of your own, use
+      # Resend's test sender (EMAIL_FROM=onboarding@resend.dev), which only delivers to the
+      # address your Resend account was made with.
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      # Web Push keys: generate once with `npx web-push generate-vapid-keys` and keep them - changing
+      # them later orphans every device's notification subscription.
+      - key: VAPID_SUBJECT
+        sync: false # mailto:you@example.com
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
