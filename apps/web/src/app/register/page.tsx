@@ -86,6 +86,18 @@ export default function RegisterPage() {
         </PrimaryButton>
       </form>
 
+      <p className="mt-4 text-center text-xs text-foreground/60">
+        By signing up you agree to the{' '}
+        <Link href="/terms" className="underline">
+          Terms
+        </Link>{' '}
+        and{' '}
+        <Link href="/privacy" className="underline">
+          Privacy Policy
+        </Link>
+        .
+      </p>
+
       <p className="mt-6 text-center text-sm text-foreground/70">
         Already have an account?{' '}
         <Link href="/login" className="text-accent hover:underline">
