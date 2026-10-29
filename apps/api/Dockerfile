@@ -26,9 +26,10 @@ COPY apps/web/package.json apps/web/
 RUN npm ci --workspace apps/api
 
 COPY apps/api apps/api
+# From the API's own directory: its dependencies (prisma among them) are installed there, not hoisted to the root.
+WORKDIR /app/apps/api
 # Generates the Prisma client (and the engine for *this* system) into src/generated, then compiles into dist.
-RUN npx prisma generate --schema apps/api/prisma/schema.prisma \
-    && npm run build --workspace apps/api
+RUN npx prisma generate && npm run build
 
 # ---- runtime ----------------------------------------------------------------
 FROM node:24-bookworm-slim AS runtime
