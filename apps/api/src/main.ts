@@ -1,13 +1,17 @@
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { ValidationPipe } from '@nestjs/common';
+import { ConsoleLogger, ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import { requestLogging } from './common/request-logging.js';
 import { trustProxyHops } from './config/env.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // One JSON object per line in production, which log tools can search and filter; the
+  // readable coloured output in development.
+  const logger = process.env.NODE_ENV === 'production' ? new ConsoleLogger({ json: true, colors: false }) : undefined;
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, logger ? { logger } : {});
 
   // How many reverse proxies sit in front of this process (TRUST_PROXY). Rate
   // limits are per client address, so without it everyone behind the platform's
@@ -16,6 +20,8 @@ async function bootstrap() {
 
   // Headers that harden a JSON API (no sniffing, no framing, HSTS over https...).
   app.use(helmet());
+  // First after the security headers, so every response - even a refused one - carries an id and is logged.
+  app.use(requestLogging());
   app.use(cookieParser());
   app.enableCors({
     origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000',

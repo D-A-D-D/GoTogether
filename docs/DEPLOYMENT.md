@@ -41,7 +41,7 @@ The API's `WEB_ORIGIN` must be the web app's exact origin (`https://app.example.
 
 - A **domain** and access to its DNS.
 - **Neon** (exists). Decide the region - see section 5.
-- **Resend**: an API key, and the domain you will send from verified with them (they give you SPF/DKIM DNS records to add).
+- **Resend**: an API key, and the domain you will send from verified with them (they give you SPF/DKIM DNS records to add). (The API's Resend adapter has been pointed at Resend's real service with a deliberately fake key and was answered "API key is invalid" (401) - so its address, method and authorisation header are understood. The message body format is still unproven until a real key sends a real email.)
 - **Vercel** (web) and a **container host** (API).
 - Optionally an error tracker (Sentry or similar) and an uptime monitor - not wired up yet.
 
@@ -118,6 +118,22 @@ Things the host must do:
 - **WebSockets** (chat) must be supported and sticky routing is unnecessary with one instance. Confirm the platform's proxy allows long-lived upgrades and does not idle them out too aggressively.
 - **Resources.** There is no measured baseline yet; start small (256-512 MB) and watch.
 
+## 6a. Logs and request ids
+
+In production the API writes **one JSON object per line** to standard output (in development it keeps the readable, coloured format). Every HTTP request gets a **request id**, returned in an `X-Request-Id` response header, and one line when it finishes:
+
+```json
+{"level":"log","pid":1,"timestamp":1793279566445,"message":{"message":"request","requestId":"127a9e22-1ddc-42a4-9a31-bf6a91c51c54","method":"GET","path":"/tags","status":200,"durationMs":793,"ip":"203.0.113.9"},"context":"HTTP"}
+```
+
+- When someone reports a problem, ask for the id from the response header (or the time and the page) and search the logs for it.
+- A request id sent by a proxy or load balancer is kept if it is a sane shape (8-64 letters, digits, `.`, `_`, `-`), so a request can be followed across hops; anything else is replaced.
+- 5xx responses are logged at `error` level, requests of 2 seconds or more as `slow request` warnings. Healthy `/health` and `/health/ready` checks are not logged (the platform polls them constantly); failing ones are.
+- **Never logged**: the query string, headers, cookies, request bodies. The client address *is* logged (`ip`), which is personal data under most privacy laws: mention it in the privacy policy and keep log retention short.
+- Unexpected errors are logged with their stack. Clients never see them: HTTP responses say only "Internal server error", and the chat gateway tells a client something generic rather than the error's text (which could contain a file path or the database host).
+
+Your host's log viewer or a log service (anything that can search JSON) will do; none is wired up yet.
+
 ## 7. Releasing and rolling back
 
 1. Merge to `main`; CI must be green (lint, build, unit, e2e, dependency audit, container smoke test).
@@ -136,22 +152,21 @@ Things the host must do:
 
 ## 9. First deploy: verify it, in this order
 
-Replace the addresses, run these from your own machine, and tick each one. None of this has been run against a real deployment yet.
+First let the script do the mechanical part (`scripts/smoke.mjs`, no dependencies, run from a checkout on your own machine). CI runs this same script against the container on every push, so it is exercised constantly - but it has not yet been run against a real deployment.
 
 ```bash
-API=https://api.example.com
+# read-only: health, readiness, headers, CORS, that the web app was built pointing at this API
+node scripts/smoke.mjs --api https://api.example.com --web https://app.example.com
 
-# the process is alive, and can reach the database
-curl -fsS $API/health
-curl -fsS $API/health/ready
-
-# hardening headers, and no X-Powered-By
-curl -sI $API/health | grep -iE 'strict-transport|x-content-type|x-powered-by'
-
-# CORS: only the web origin is allowed, and it is echoed back exactly
-curl -s -D - -o /dev/null -X OPTIONS $API/auth/login \
-  -H 'Origin: https://app.example.com' -H 'Access-Control-Request-Method: POST' | grep -i access-control-allow
+# the same, plus a throwaway account's whole lifecycle: sign up, sign in (session cookie flags), a wrong
+# password, the profile, renewing the session, a reset request - then it deletes the account.
+# Use a mailbox you control: the verification email goes there. Leaves one anonymous "Deleted user" row.
+node scripts/smoke.mjs --api https://api.example.com --web https://app.example.com   --write --email you+smoke@example.com
 ```
+
+It exits non-zero and says what is wrong in plain words ("the API does not allow the web origin ... is WEB_ORIGIN set to exactly that?", "the web app's scripts do not mention the API address ... was it built with NEXT_PUBLIC_API_URL set?", "the database cannot be reached"). It checks: the API is alive and **ready** (it can reach the database); security headers and a request id on every response, and no `X-Powered-By`; CORS allows the web origin with credentials and nobody else; a protected route refuses a caller with no session; the web pages load, carry their security headers, and serve the manifest and service worker; the web build points at this API; and (with `--write`) the session cookie is `HttpOnly; Secure; SameSite=Lax`, a wrong password is refused, the profile never includes the password hash, the session can be renewed, a reset request gets the neutral answer, and the deleted account can no longer sign in.
+
+What it **cannot** check is the part that most often goes wrong, because it depends on the browser's own same-site rules: whether a browser on the real web address keeps you signed in. That is the first item below.
 
 Then in a browser, on the real web address:
 
@@ -172,4 +187,4 @@ cd apps/api && npm run set-role -- you@example.com ADMIN
 
 ## 10. Not done yet
 
-Tracked in ROADMAP.md under "Launch readiness": a deploy pipeline (CD) that publishes the image and releases it, error tracking, an uptime monitor, structured request logs, legal pages, phone verification, and the moderation decisions. This runbook gets a person from nothing to a running, checked deployment by hand; automating it is the next step once a host is chosen.
+Tracked in ROADMAP.md under "Launch readiness": a deploy pipeline (CD) that publishes the image and releases it, error tracking, an uptime monitor, a log service to search the (now structured) logs, legal pages, phone verification, and the moderation decisions. This runbook gets a person from nothing to a running, checked deployment by hand; automating it is the next step once a host is chosen.

@@ -1,4 +1,4 @@
-import { UsePipes, ValidationPipe } from '@nestjs/common';
+import { HttpException, Logger, UsePipes, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -42,6 +42,8 @@ function roomName(tripId: string): string {
 })
 @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
 export class ChatGateway implements OnGatewayInit {
+  private readonly logger = new Logger(ChatGateway.name);
+
   @WebSocketServer()
   private server!: Server;
 
@@ -55,6 +57,21 @@ export class ChatGateway implements OnGatewayInit {
     private readonly blocks: BlocksService,
     private readonly accounts: AccountStateService,
   ) {}
+
+  /**
+   * What a client is told about a failure. A deliberate refusal ("only approved members can
+   * use this chat") is an HttpException and its message is meant to be read. Anything else is
+   * a bug or an outage, and its text - a database host, a file path, a query - must never
+   * reach a client: it is logged, and the client gets something generic.
+   */
+  private clientError(error: unknown, fallback: string): string {
+    if (error instanceof HttpException) return error.message;
+    this.logger.error(
+      `Chat request failed: ${error instanceof Error ? error.message : String(error)}`,
+      error instanceof Error ? error.stack : undefined,
+    );
+    return fallback;
+  }
 
   /** A restricted or deleted account has no business in a live connection. */
   private async isInGoodStanding(userId: string): Promise<boolean> {
@@ -94,7 +111,7 @@ export class ChatGateway implements OnGatewayInit {
       await socket.join(roomName(dto.tripId));
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : 'Unable to join' };
+      return { ok: false, error: this.clientError(error, 'Could not join the chat right now - please try again') };
     }
   }
 
@@ -114,7 +131,7 @@ export class ChatGateway implements OnGatewayInit {
       await this.broadcast(dto.tripId, message);
       return { ok: true, message };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : 'Unable to send message' };
+      return { ok: false, error: this.clientError(error, 'Could not send that message - please try again') };
     }
   }
 

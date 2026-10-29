@@ -1,3 +1,4 @@
+import { ForbiddenException, Logger } from '@nestjs/common';
 import { CHAT_MESSAGES_PER_WINDOW, CHAT_TOO_FAST, CHAT_WINDOW_MS, ChatGateway } from './chat.gateway.js';
 
 // The gateway's live broadcast, with a fake socket.io server. The point:
@@ -79,7 +80,7 @@ describe('ChatGateway.onSendMessage — live broadcast', () => {
   });
 
   it('acknowledges a failure instead of throwing, and broadcasts nothing', async () => {
-    const { send, sockets } = harness({ createError: new Error('Only approved trip members can access this chat') });
+    const { send, sockets } = harness({ createError: new ForbiddenException('Only approved trip members can access this chat') });
     expect(await send()).toEqual({ ok: false, error: 'Only approved trip members can access this chat' });
     for (const socket of sockets) expect(socket.emit).not.toHaveBeenCalled();
   });
@@ -235,5 +236,61 @@ describe('ChatGateway — message rate limit', () => {
     const { send, senderSocket } = harness({ restricted: ['sender'] });
     expect(await send()).toEqual({ ok: false, error: 'This account is not available' });
     expect(senderSocket.disconnect).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('ChatGateway — what clients are told when something goes wrong', () => {
+  // The kind of text a database error carries: a path, a query, a host name.
+  const INTERNAL = "Invalid `this.prisma.tripMembership.findUnique()` invocation in D:/app/chat.service.ts:24:57 - Can't reach database server at `ep-secret-host.neon.tech:5432`";
+
+  function joining(assertCanAccess: () => Promise<void>) {
+    const gateway = new ChatGateway({} as never, {} as never, { assertCanAccess } as never, {} as never, {} as never);
+    const socket = { data: { userId: 'u1' }, join: vi.fn().mockResolvedValue(undefined), disconnect: vi.fn() };
+    return { join: () => gateway.onJoinRoom(socket as never, { tripId: 't1' } as never), socket };
+  }
+
+  beforeEach(() => {
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('does not pass an unexpected error on sending to the client - it is logged, and the client gets something generic', async () => {
+    const { send } = harness({ createError: new Error(INTERNAL) });
+    const result = await send();
+    expect(result).toEqual({ ok: false, error: 'Could not send that message - please try again' });
+    expect(JSON.stringify(result)).not.toMatch(/prisma|neon|chat\.service|database server/i);
+    expect(Logger.prototype.error).toHaveBeenCalledWith(expect.stringContaining("Can't reach database server"), expect.any(String));
+  });
+
+  it('does the same when joining a room fails unexpectedly', async () => {
+    const { join, socket } = joining(async () => {
+      throw new Error(INTERNAL);
+    });
+    const result = await join();
+    expect(result).toEqual({ ok: false, error: 'Could not join the chat right now - please try again' });
+    expect(JSON.stringify(result)).not.toMatch(/prisma|neon|database server/i);
+    expect(socket.join).not.toHaveBeenCalled();
+  });
+
+  it('still tells someone plainly when they are refused: those messages are written to be read', async () => {
+    const { join } = joining(async () => {
+      throw new ForbiddenException('Only approved trip members can access this chat');
+    });
+    expect(await join()).toEqual({ ok: false, error: 'Only approved trip members can access this chat' });
+  });
+
+  it('does not log a deliberate refusal as an error', async () => {
+    const { join } = joining(async () => {
+      throw new ForbiddenException('Only approved trip members can access this chat');
+    });
+    await join();
+    expect(Logger.prototype.error).not.toHaveBeenCalled();
+  });
+
+  it('copes with something that is not even an Error being thrown', async () => {
+    const { join } = joining(async () => {
+      throw 'a bare string';
+    });
+    expect(await join()).toEqual({ ok: false, error: 'Could not join the chat right now - please try again' });
   });
 });

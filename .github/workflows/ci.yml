@@ -61,6 +61,9 @@ jobs:
       - name: Unit test — web (service worker)
         run: npm run test:web
 
+      - name: Unit test — deployment smoke checks
+        run: npm run test:scripts
+
       - name: E2E test — api
         run: npm run test:e2e
         working-directory: apps/api
@@ -86,6 +89,10 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
       - name: Build the API image
         run: docker build -f apps/api/Dockerfile -t gotogether-api .
@@ -136,43 +143,15 @@ jobs:
           echo "never became ready (last status: $code)"
           exit 1
 
-      - name: Smoke test
+      - name: Smoke test (the same script used on a real deployment)
         run: |
-          set -e
-          base=http://localhost:3001
+          node scripts/smoke.mjs --api http://localhost:3001 --web-origin https://app.example.test             --write --email ci-smoke@example.com
 
-          echo "-- liveness, and the hardening headers"
-          curl -fsS "$base/health" | jq -e '.status == "ok"'
-          headers=$(curl -sI "$base/health")
-          echo "$headers" | grep -qi '^x-content-type-options: nosniff' || { echo "missing nosniff"; exit 1; }
-          echo "$headers" | grep -qi '^strict-transport-security' || { echo "missing HSTS"; exit 1; }
-          if echo "$headers" | grep -qi '^x-powered-by'; then echo "X-Powered-By is exposed"; exit 1; fi
-
-          echo "-- register, sign in, read the profile"
-          status=$(curl -s -o "$RUNNER_TEMP/register.json" -w '%{http_code}' -X POST "$base/auth/register" \
-            -H 'content-type: application/json' \
-            -d '{"email":"ci-smoke@example.com","password":"a-long-enough-passphrase","name":"CI Smoke"}')
-          [ "$status" = "201" ] || { echo "register returned $status"; cat "$RUNNER_TEMP/register.json"; exit 1; }
-          curl -s -D "$RUNNER_TEMP/login.headers" -o "$RUNNER_TEMP/login.json" -X POST "$base/auth/login" \
-            -H 'content-type: application/json' \
-            -d '{"email":"ci-smoke@example.com","password":"a-long-enough-passphrase"}'
-          token=$(jq -r .accessToken "$RUNNER_TEMP/login.json")
-          [ -n "$token" ] && [ "$token" != "null" ] || { echo "no access token"; cat "$RUNNER_TEMP/login.json"; exit 1; }
-          cookie=$(grep -i '^set-cookie: gt_refresh' "$RUNNER_TEMP/login.headers")
-          echo "$cookie" | grep -q 'HttpOnly' || { echo "cookie is not HttpOnly"; exit 1; }
-          echo "$cookie" | grep -q 'Secure' || { echo "cookie is not Secure in production"; exit 1; }
-          echo "$cookie" | grep -q 'SameSite=Lax' || { echo "cookie is not SameSite=Lax"; exit 1; }
-          curl -fsS "$base/users/me" -H "authorization: Bearer $token" | jq -e '.email == "ci-smoke@example.com" and .hasPassword == true and (has("passwordHash") | not)'
-
-          echo "-- a wrong password is refused"
-          status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/auth/login" -H 'content-type: application/json' \
-            -d '{"email":"ci-smoke@example.com","password":"not-the-password"}')
-          [ "$status" = "401" ] || { echo "wrong password returned $status"; exit 1; }
-
-          echo "-- the process does not run as root"
+      - name: The process does not run as root
+        run: |
           uid=$(docker exec api id -u)
-          [ "$uid" != "0" ] || { echo "running as root"; exit 1; }
           echo "uid $uid"
+          [ "$uid" != "0" ] || { echo "running as root"; exit 1; }
 
       - name: It shuts down gracefully when told to
         run: |
