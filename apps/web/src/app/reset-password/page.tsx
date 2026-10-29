@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { ApiError, resetPassword } from '@/lib/api';
 import { tokenFromFragment } from '@/lib/token-fragment';
+import { useHydrated } from '@/lib/use-hydrated';
 import { Label, TextInput, ErrorText, PrimaryButton } from '@/components/form-controls';
 
 type Stage = 'reading' | 'ready' | 'no-link' | 'done';
@@ -16,6 +17,7 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [linkIsBad, setLinkIsBad] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const hydrated = useHydrated();
   // The token, once read. Kept in a ref as well as state because React runs effects twice in
   // development: the first run takes the token out of the address bar (below), so the second
   // would find nothing and must not conclude the link was incomplete.
@@ -99,7 +101,7 @@ export default function ResetPasswordPage() {
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
       <h1 className="text-2xl font-semibold tracking-tight">Choose a new password</h1>
 
-      <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
+      <form method="post" onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="new-password">New password</Label>
           <TextInput
@@ -135,7 +137,7 @@ export default function ResetPasswordPage() {
           </Link>
         )}
 
-        <PrimaryButton type="submit" disabled={!valid || submitting} className="mt-2">
+        <PrimaryButton type="submit" disabled={!valid || submitting || !hydrated} className="mt-2">
           {submitting ? 'Saving…' : 'Change password'}
         </PrimaryButton>
       </form>

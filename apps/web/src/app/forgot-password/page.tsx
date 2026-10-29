@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { ApiError, requestPasswordReset } from '@/lib/api';
+import { useHydrated } from '@/lib/use-hydrated';
 import { Label, TextInput, ErrorText, PrimaryButton } from '@/components/form-controls';
 
 export default function ForgotPasswordPage() {
@@ -10,6 +11,7 @@ export default function ForgotPasswordPage() {
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const hydrated = useHydrated();
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -48,7 +50,7 @@ export default function ForgotPasswordPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Forgot your password?</h1>
       <p className="mt-2 text-sm text-foreground/70">Enter your email and we&apos;ll send you a link to choose a new one.</p>
 
-      <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
+      <form method="post" onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="email">Email</Label>
           <TextInput
@@ -64,7 +66,7 @@ export default function ForgotPasswordPage() {
 
         <ErrorText>{error}</ErrorText>
 
-        <PrimaryButton type="submit" disabled={submitting || !email.trim()} className="mt-2">
+        <PrimaryButton type="submit" disabled={submitting || !hydrated || !email.trim()} className="mt-2">
           {submitting ? 'Sending…' : 'Send me a link'}
         </PrimaryButton>
       </form>

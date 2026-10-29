@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
+import { useHydrated } from '@/lib/use-hydrated';
 import { Label, TextInput, ErrorText, PrimaryButton } from '@/components/form-controls';
 
 export default function RegisterPage() {
@@ -15,6 +16,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const hydrated = useHydrated();
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -37,7 +39,7 @@ export default function RegisterPage() {
         Start at trust score 50 — it builds as you complete trips and get reviewed.
       </p>
 
-      <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
+      <form method="post" onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="name">Name</Label>
           <TextInput
@@ -79,7 +81,7 @@ export default function RegisterPage() {
 
         <ErrorText>{error}</ErrorText>
 
-        <PrimaryButton type="submit" disabled={submitting} className="mt-2">
+        <PrimaryButton type="submit" disabled={submitting || !hydrated} className="mt-2">
           {submitting ? 'Creating account…' : 'Create account'}
         </PrimaryButton>
       </form>

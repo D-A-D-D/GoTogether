@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
+import { useHydrated } from '@/lib/use-hydrated';
 import { Label, TextInput, ErrorText, PrimaryButton } from '@/components/form-controls';
 
 export default function LoginPage() {
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const hydrated = useHydrated();
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -34,7 +36,7 @@ export default function LoginPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
       <p className="mt-2 text-sm text-foreground/70">Log in to see your trips and messages.</p>
 
-      <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
+      <form method="post" onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="email">Email</Label>
           <TextInput
@@ -66,7 +68,7 @@ export default function LoginPage() {
 
         <ErrorText>{error}</ErrorText>
 
-        <PrimaryButton type="submit" disabled={submitting} className="mt-2">
+        <PrimaryButton type="submit" disabled={submitting || !hydrated} className="mt-2">
           {submitting ? 'Logging in…' : 'Log in'}
         </PrimaryButton>
       </form>
