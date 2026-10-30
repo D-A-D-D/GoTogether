@@ -4,7 +4,8 @@
 // with a currency column if/when multi-currency scope is picked up.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
   output   = "../src/generated/prisma"
 }
 

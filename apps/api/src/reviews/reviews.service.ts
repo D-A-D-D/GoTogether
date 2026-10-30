@@ -110,6 +110,7 @@ export class ReviewsService {
     await this.assertEverApprovedMember(tripId, userId);
 
     const members = await this.prisma.tripMembership.findMany({
+      relationLoadStrategy: 'join',
       where: {
         tripId,
         userId: { not: userId },
@@ -137,6 +138,7 @@ export class ReviewsService {
     // unprocessed one about you is exactly what the blind window exists
     // to keep you from seeing yet.
     return this.prisma.review.findMany({
+      relationLoadStrategy: 'join',
       where: { tripId, revieweeId: userId, processedAt: { not: null } },
       include: { reviewer: { select: PUBLIC_SELECT } },
       orderBy: { createdAt: 'desc' },

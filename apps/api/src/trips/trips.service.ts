@@ -162,6 +162,7 @@ export class TripsService {
 
   async listHosted(hostId: string) {
     return this.prisma.trip.findMany({
+      relationLoadStrategy: 'join',
       where: { hostId },
       include: { includeTags: true, excludeTags: true, host: { select: HOST_SELECT } },
       orderBy: { createdAt: 'desc' },
@@ -178,6 +179,7 @@ export class TripsService {
    */
   async listMine(userId: string) {
     return this.prisma.tripMembership.findMany({
+      relationLoadStrategy: 'join',
       where: { userId },
       include: {
         trip: { include: { includeTags: true, host: { select: HOST_SELECT } } },
@@ -187,25 +189,28 @@ export class TripsService {
   }
 
   async discover(userId: string, dto: DiscoverTripsDto) {
-    const user = await this.prisma.user.findUniqueOrThrow({
-      where: { id: userId },
-      include: { preferenceTags: true },
-    });
-
-    const blockedHostIds = await this.blocks.blockedWith(userId);
-
-    const ownMemberships = await this.prisma.tripMembership.findMany({
-      where: { userId },
-      select: { tripId: true },
-    });
+    // Three independent lookups, run together: each is a round trip to the database, and
+    // one after another they were most of this page's load time. One read of the viewer's
+    // memberships serves both "trips already requested or joined" and "dates already taken".
+    const [user, blockedHostIds, ownMemberships] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({
+        relationLoadStrategy: 'join',
+        where: { id: userId },
+        include: { preferenceTags: true },
+      }),
+      this.blocks.blockedWith(userId),
+      this.prisma.tripMembership.findMany({
+        relationLoadStrategy: 'join',
+        where: { userId },
+        select: { tripId: true, status: true, trip: { select: { startDate: true, endDate: true } } },
+      }),
+    ]);
     const alreadyInteractedTripIds = ownMemberships.map((m) => m.tripId);
+    const approvedWindows = ownMemberships.filter((m) => m.status === MembershipStatus.APPROVED);
 
-    const approvedWindows = await this.prisma.tripMembership.findMany({
-      where: { userId, status: MembershipStatus.APPROVED },
-      include: { trip: { select: { startDate: true, endDate: true } } },
-    });
-
+    // 'join': tags and host come back in this one query rather than one query each.
     const candidates = await this.prisma.trip.findMany({
+      relationLoadStrategy: 'join',
       where: {
         status: TripStatus.OPEN,
         visibility: TripVisibility.PUBLIC,
@@ -247,6 +252,7 @@ export class TripsService {
 
   async findById(tripId: string, requestingUserId: string) {
     const found = await this.prisma.trip.findUnique({
+      relationLoadStrategy: 'join',
       where: { id: tripId },
       // accountStatus is for this check only — it must not reach the client in `host`.
       include: { includeTags: true, excludeTags: true, host: { select: { ...HOST_SELECT, accountStatus: true } } },
@@ -257,22 +263,26 @@ export class TripsService {
     const { accountStatus: hostStatus, ...host } = found.host;
     const trip = { ...found, host };
 
-    const [approvedCount, myMembership] = await Promise.all([
+    const viewerIsHost = trip.hostId === requestingUserId;
+
+    // All three at once - they depend only on the trip we already have, and each is a round
+    // trip to the database. The block check is only used for an outsider, but starting it
+    // alongside the others costs nothing and saves a step for the common case.
+    const [approvedCount, myMembership, blockedWithHost] = await Promise.all([
       this.prisma.tripMembership.count({ where: { tripId, status: MembershipStatus.APPROVED } }),
       this.prisma.tripMembership.findUnique({
         where: { tripId_userId: { tripId, userId: requestingUserId } },
         select: { status: true, role: true },
       }),
+      viewerIsHost ? Promise.resolve(false) : this.blocks.areBlocked(requestingUserId, trip.hostId),
     ]);
-
-    const viewerIsHost = trip.hostId === requestingUserId;
 
     // A block hides the two people from each other, trips included — as if the
     // trip didn't exist, so nothing reveals that a block is why. A suspended or
     // closed host's trip is hidden from outsiders the same way. Someone already
     // on the trip keeps access; neither a block nor a suspension removes anyone.
     if (!viewerIsHost && !myMembership) {
-      if (hostStatus !== AccountStatus.ACTIVE || (await this.blocks.areBlocked(requestingUserId, trip.hostId))) {
+      if (hostStatus !== AccountStatus.ACTIVE || blockedWithHost) {
         throw new NotFoundException('Trip not found');
       }
     }
@@ -352,6 +362,7 @@ export class TripsService {
   async listRequests(tripId: string, hostUserId: string) {
     await this.assertIsHost(tripId, hostUserId);
     return this.prisma.tripMembership.findMany({
+      relationLoadStrategy: 'join',
       // Someone suspended since they asked can't take a place, so the host isn't shown them.
       where: { tripId, status: MembershipStatus.REQUESTED, user: { accountStatus: AccountStatus.ACTIVE } },
       include: { user: { select: REQUESTER_SELECT } },

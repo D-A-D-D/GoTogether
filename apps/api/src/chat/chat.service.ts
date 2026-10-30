@@ -37,32 +37,55 @@ export class ChatService {
     return room.id;
   }
 
+  /**
+   * Saves a message. Only that - telling people about it (push notifications) is notifyOthers(), which the
+   * caller runs after the message has been delivered, so a slow or failing push can never hold up a chat.
+   */
   async createMessage(tripId: string, senderId: string, content: string) {
-    await this.assertCanAccess(tripId, senderId);
-    const roomId = await this.getRoomId(tripId);
-    const message = await this.prisma.message.create({
-      data: { roomId, senderId, content },
-      include: { sender: { select: SENDER_SELECT } },
-    });
+    // Three independent lookups, started together: each is a round trip to the database. The
+    // sender's name is fetched here, not by asking the insert to include it - an insert that also
+    // reads a relation back is several statements, each its own round trip. Who is refused is decided
+    // in the same order as before: not a member first, no room second.
+    const [membership, room, sender] = await Promise.all([
+      this.prisma.tripMembership.findUnique({ where: { tripId_userId: { tripId, userId: senderId } } }),
+      this.prisma.chatRoom.findUnique({ where: { tripId } }),
+      this.prisma.user.findUnique({ where: { id: senderId }, select: SENDER_SELECT }),
+    ]);
+    if (!membership || membership.status !== MembershipStatus.APPROVED) {
+      throw new ForbiddenException('Only approved trip members can access this chat');
+    }
+    if (!room) {
+      throw new NotFoundException('This trip has no chat room yet');
+    }
+    if (!sender) {
+      throw new ForbiddenException('Only approved trip members can access this chat');
+    }
+    const message = await this.prisma.message.create({ data: { roomId: room.id, senderId, content } });
+    return { ...message, sender };
+  }
 
-    // Best-effort, fire-and-forget from the caller's perspective — a member
-    // who's actively connected already got this over the socket; a push
-    // notification to them too is a known, accepted redundancy (no
-    // presence-tracking yet to suppress it — see docs/IDEAS.md).
+  /**
+   * Push notification of a new message to the other approved members. Best-effort and meant to run
+   * after delivery without being waited for; a member who is actively connected already got the
+   * message over the socket, and a push to them too is a known, accepted redundancy (no presence
+   * tracking yet to suppress it - see docs/IDEAS.md). `hidden` is everyone blocked with the sender.
+   */
+  async notifyOthers(
+    tripId: string,
+    message: { senderId: string; content: string; sender: { name: string } },
+    hidden: ReadonlySet<string>,
+  ): Promise<void> {
     const others = await this.prisma.tripMembership.findMany({
-      where: { tripId, status: MembershipStatus.APPROVED, userId: { not: senderId } },
+      where: { tripId, status: MembershipStatus.APPROVED, userId: { not: message.senderId } },
       select: { userId: true },
     });
-    // A message must not reach someone who's blocked with the sender — by push either.
-    const hidden = await this.blocks.blockedWith(senderId);
     const preview =
-      content.length > MESSAGE_PREVIEW_LENGTH ? `${content.slice(0, MESSAGE_PREVIEW_LENGTH)}…` : content;
+      message.content.length > MESSAGE_PREVIEW_LENGTH ? `${message.content.slice(0, MESSAGE_PREVIEW_LENGTH)}…` : message.content;
+    // A message must not reach someone who's blocked with the sender - by push either.
     await this.notifications.notifyUsers(
       others.map((m) => m.userId).filter((id) => !hidden.has(id)),
       { title: message.sender.name, body: preview, url: `/trips/${tripId}/chat` },
     );
-
-    return message;
   }
 
   /**
@@ -91,6 +114,7 @@ export class ChatService {
     const hidden = await this.blocks.blockedWith(userId);
 
     const messages = await this.prisma.message.findMany({
+      relationLoadStrategy: 'join',
       where: { roomId, ...(hidden.size > 0 ? { senderId: { notIn: [...hidden] } } : {}) },
       include: { sender: { select: SENDER_SELECT } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],

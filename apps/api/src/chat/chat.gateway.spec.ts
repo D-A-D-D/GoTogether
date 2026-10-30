@@ -19,6 +19,7 @@ function harness(
     createMessage: options.createError
       ? vi.fn().mockRejectedValue(options.createError)
       : vi.fn().mockResolvedValue(message),
+    notifyOthers: vi.fn().mockResolvedValue(undefined),
   };
   const blocks = { blockedWith: vi.fn().mockResolvedValue(new Set(options.hidden ?? [])) };
   const accounts = {
@@ -77,6 +78,55 @@ describe('ChatGateway.onSendMessage — live broadcast', () => {
   it('acknowledges the sender with the message, whoever was blocked', async () => {
     const { send, message } = harness({ hidden: ['blocked-one'] });
     expect(await send()).toEqual({ ok: true, message });
+  });
+
+  it('delivers and acknowledges without waiting for push notifications', async () => {
+    const { send, sockets, chatService } = harness();
+    chatService.notifyOthers.mockReturnValue(new Promise(() => undefined)); // a push service that never answers
+    const ack = await send();
+    expect(ack).toMatchObject({ ok: true });
+    for (const socket of sockets) expect(socket.emit).toHaveBeenCalled();
+  });
+
+  it('starts the notification only after the message has been delivered', async () => {
+    const { send, sockets, chatService } = harness();
+    await send();
+    await Promise.resolve();
+    const delivered = Math.max(...sockets.map((s) => s.emit.mock.invocationCallOrder[0]));
+    expect(chatService.notifyOthers).toHaveBeenCalledTimes(1);
+    expect(chatService.notifyOthers.mock.invocationCallOrder[0]).toBeGreaterThan(delivered);
+  });
+
+  it('hands the notification the same blocked set that decided who got the message', async () => {
+    const { send, chatService } = harness({ hidden: ['blocked-one'] });
+    await send();
+    await Promise.resolve();
+    expect([...chatService.notifyOthers.mock.calls[0][2]]).toEqual(['blocked-one']);
+  });
+
+  it('looks up who is blocked once per message, for delivery and notification together', async () => {
+    const { send, blocks } = harness();
+    await send();
+    expect(blocks.blockedWith).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not turn a delivered message into an error when the notification fails, and says so in the log', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { send, sockets, chatService } = harness();
+    chatService.notifyOthers.mockRejectedValue(new Error('push is down'));
+    const ack = await send();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(ack).toMatchObject({ ok: true });
+    for (const socket of sockets) expect(socket.emit).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('push is down'));
+    warn.mockRestore();
+  });
+
+  it('sends no notification for a message that failed to save', async () => {
+    const { send, chatService } = harness({ createError: new ForbiddenException('no') });
+    await send();
+    await Promise.resolve();
+    expect(chatService.notifyOthers).not.toHaveBeenCalled();
   });
 
   it('acknowledges a failure instead of throwing, and broadcasts nothing', async () => {

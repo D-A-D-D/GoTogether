@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ChatService } from './chat.service.js';
 
 // The database is mocked: these cover how history is paged — the ordering,
@@ -98,19 +98,86 @@ describe('ChatService — blocks', () => {
   it("does not push a message to someone who is blocked with the sender", async () => {
     const notifyUsers = vi.fn().mockResolvedValue(undefined);
     const service = new ChatService(
-      {
-        tripMembership: {
-          findUnique: vi.fn().mockResolvedValue({ status: 'APPROVED' }),
-          findMany: vi.fn().mockResolvedValue([{ userId: 'friend' }, { userId: 'blocked-one' }]),
-        },
-        chatRoom: { findUnique: vi.fn().mockResolvedValue({ id: 'room-1' }) },
-        message: { create: vi.fn().mockResolvedValue({ id: 'm1', sender: { id: 'sender', name: 'Sam' } }) },
-      } as never,
+      { tripMembership: { findMany: vi.fn().mockResolvedValue([{ userId: 'friend' }, { userId: 'blocked-one' }]) } } as never,
       { notifyUsers } as never,
-      { blockedWith: vi.fn().mockResolvedValue(new Set(['blocked-one'])) } as never,
+      {} as never,
     );
-    await service.createMessage('trip-1', 'sender', 'hello');
+    await service.notifyOthers('trip-1', { senderId: 'sender', content: 'hello', sender: { name: 'Sam' } }, new Set(['blocked-one']));
     expect(notifyUsers).toHaveBeenCalledTimes(1);
     expect(notifyUsers.mock.calls[0][0]).toEqual(['friend']);
+  });
+
+  it('notifies other approved members only - never the sender - with the sender as the title', async () => {
+    const notifyUsers = vi.fn().mockResolvedValue(undefined);
+    const findMany = vi.fn().mockResolvedValue([{ userId: 'a' }]);
+    const service = new ChatService({ tripMembership: { findMany } } as never, { notifyUsers } as never, {} as never);
+    await service.notifyOthers('trip-9', { senderId: 'sender', content: 'hello', sender: { name: 'Sam' } }, new Set());
+    expect(findMany.mock.calls[0][0].where).toEqual({ tripId: 'trip-9', status: 'APPROVED', userId: { not: 'sender' } });
+    expect(notifyUsers).toHaveBeenCalledWith(['a'], { title: 'Sam', body: 'hello', url: '/trips/trip-9/chat' });
+  });
+
+  it('cuts a long message short in the notification', async () => {
+    const notifyUsers = vi.fn().mockResolvedValue(undefined);
+    const service = new ChatService({ tripMembership: { findMany: vi.fn().mockResolvedValue([{ userId: 'a' }]) } } as never, { notifyUsers } as never, {} as never);
+    await service.notifyOthers('t', { senderId: 's', content: 'x'.repeat(200), sender: { name: 'Sam' } }, new Set());
+    expect(notifyUsers.mock.calls[0][1].body).toBe(`${'x'.repeat(80)}…`);
+  });
+});
+
+describe('ChatService.createMessage', () => {
+  function build(options: { status?: string | null; room?: boolean } = {}) {
+    const create = vi.fn().mockResolvedValue({ id: 'm1', roomId: 'room-1', senderId: 'sender', content: 'hello', createdAt: new Date() });
+    const notifyUsers = vi.fn();
+    const service = new ChatService(
+      {
+        tripMembership: {
+          findUnique: vi.fn().mockResolvedValue(options.status === null ? null : { status: options.status ?? 'APPROVED' }),
+        },
+        chatRoom: { findUnique: vi.fn().mockResolvedValue(options.room === false ? null : { id: 'room-1' }) },
+        user: { findUnique: vi.fn().mockResolvedValue({ id: 'sender', name: 'Sam' }) },
+        message: { create },
+      } as never,
+      { notifyUsers } as never,
+      {} as never,
+    );
+    return { service, create, notifyUsers };
+  }
+
+  it('saves the message in the room of that trip, as the sender', async () => {
+    const { service, create } = build();
+    await service.createMessage('trip-1', 'sender', 'hello');
+    expect(create.mock.calls[0][0].data).toEqual({ roomId: 'room-1', senderId: 'sender', content: 'hello' });
+  });
+
+  it('returns the saved message with its sender, without asking the insert to read it back', async () => {
+    const { service, create } = build();
+    const message = await service.createMessage('trip-1', 'sender', 'hello');
+    expect(message.sender).toEqual({ id: 'sender', name: 'Sam' });
+    expect(message.content).toBe('hello');
+    expect(create.mock.calls[0][0]).not.toHaveProperty('include');
+  });
+
+  it('refuses someone who is not an approved member, and saves nothing', async () => {
+    for (const status of [null, 'REQUESTED', 'LEFT', 'REMOVED']) {
+      const { service, create } = build({ status });
+      await expect(service.createMessage('trip-1', 'sender', 'hi')).rejects.toBeInstanceOf(ForbiddenException);
+      expect(create).not.toHaveBeenCalled();
+    }
+  });
+
+  it('says "not a member", not "no room", when both are true - nothing is revealed to an outsider', async () => {
+    const { service } = build({ status: null, room: false });
+    await expect(service.createMessage('trip-1', 'sender', 'hi')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('reports a missing chat room for a member', async () => {
+    const { service } = build({ room: false });
+    await expect(service.createMessage('trip-1', 'sender', 'hi')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('sends no notification itself: that is done afterwards, so it cannot hold up the chat', async () => {
+    const { service, notifyUsers } = build();
+    await service.createMessage('trip-1', 'sender', 'hello');
+    expect(notifyUsers).not.toHaveBeenCalled();
   });
 });

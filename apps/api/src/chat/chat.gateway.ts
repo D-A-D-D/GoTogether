@@ -127,8 +127,15 @@ export class ChatGateway implements OnGatewayInit {
         return { ok: false, error: CHAT_TOO_FAST };
       }
       this.sendLimiter.record(socket.data.userId);
-      const message = await this.chatService.createMessage(dto.tripId, socket.data.userId, dto.content);
-      await this.broadcast(dto.tripId, message);
+      // Saving the message and finding out who is blocked with the sender do not depend on each other.
+      const [message, hidden] = await Promise.all([
+        this.chatService.createMessage(dto.tripId, socket.data.userId, dto.content),
+        this.blocks.blockedWith(socket.data.userId),
+      ]);
+      await this.broadcast(dto.tripId, message, hidden);
+      // After delivery, and not waited for: a slow push service must never delay a chat, and a failing
+      // one must never turn a delivered message into an error.
+      this.notifyInBackground(dto.tripId, message, hidden);
       return { ok: true, message };
     } catch (error) {
       return { ok: false, error: this.clientError(error, 'Could not send that message - please try again') };
@@ -142,8 +149,7 @@ export class ChatGateway implements OnGatewayInit {
    * sender always gets their own message back; the client adds it from this
    * broadcast rather than from the send acknowledgement.
    */
-  private async broadcast(tripId: string, message: { senderId: string }): Promise<void> {
-    const hidden = await this.blocks.blockedWith(message.senderId);
+  private async broadcast(tripId: string, message: { senderId: string }, hidden: ReadonlySet<string>): Promise<void> {
     const sockets = await this.server.in(roomName(tripId)).fetchSockets();
     for (const recipient of sockets) {
       const recipientId = recipient.data.userId as string | undefined;
@@ -157,6 +163,14 @@ export class ChatGateway implements OnGatewayInit {
         recipient.emit('message', message);
       }
     }
+  }
+
+  private notifyInBackground(tripId: string, message: Parameters<ChatService['notifyOthers']>[1], hidden: ReadonlySet<string>): void {
+    void Promise.resolve()
+      .then(() => this.chatService.notifyOthers(tripId, message, hidden))
+      .catch((error: unknown) => {
+        this.logger.warn(`Push notification for a chat message failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
   }
 
   private extractToken(socket: Socket): string | undefined {

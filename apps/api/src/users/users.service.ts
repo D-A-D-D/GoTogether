@@ -18,6 +18,7 @@ export class UsersService {
 
   findByIdWithTags(id: string) {
     return this.prisma.user.findUnique({
+      relationLoadStrategy: 'join',
       where: { id },
       include: { preferenceTags: true },
     });

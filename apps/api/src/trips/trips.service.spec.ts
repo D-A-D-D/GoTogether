@@ -561,6 +561,76 @@ describe('TripsService — honouring blocks', () => {
   });
 });
 
+describe('TripsService - discovery and the viewer\'s own memberships', () => {
+  const day = (d: number) => new Date(Date.UTC(2027, 0, d));
+  const candidate = (id: string, startDay: number, endDay: number) => ({
+    id,
+    title: id,
+    startDate: day(startDay),
+    endDate: day(endDay),
+    includeTags: [],
+    excludeTags: [],
+    host: { id: 'host', name: 'Host', trustScore: 50 },
+    hostId: 'host',
+    budgetMin: 0,
+    budgetMax: 0,
+    destination: 'x',
+  });
+
+  function discoverWith(memberships: unknown[], candidates: unknown[]) {
+    const membershipsFindMany = vi.fn().mockResolvedValue(memberships);
+    const tripFindMany = vi.fn().mockResolvedValue(candidates);
+    const prisma = {
+      user: { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'viewer', preferenceTags: [] }) },
+      tripMembership: { findMany: membershipsFindMany },
+      trip: { findMany: tripFindMany },
+    };
+    const matching = { score: vi.fn().mockReturnValue(50) };
+    const service = new TripsService(prisma as never, matching as never, {} as never, makeBlocks() as never);
+    return { service, membershipsFindMany, tripFindMany };
+  }
+
+  it('reads the viewer\'s memberships once, not once per question', async () => {
+    const { service, membershipsFindMany } = discoverWith([], []);
+    await service.discover('viewer', {} as never);
+    expect(membershipsFindMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves out every trip the viewer has already asked to join or is on, whatever its status', async () => {
+    const { service, tripFindMany } = discoverWith(
+      [
+        { tripId: 'asked', status: 'REQUESTED', trip: { startDate: day(1), endDate: day(2) } },
+        { tripId: 'on', status: 'APPROVED', trip: { startDate: day(10), endDate: day(12) } },
+        { tripId: 'left', status: 'LEFT', trip: { startDate: day(20), endDate: day(22) } },
+      ],
+      [],
+    );
+    await service.discover('viewer', {} as never);
+    expect(tripFindMany.mock.calls[0][0].where.id.notIn).toEqual(['asked', 'on', 'left']);
+  });
+
+  it('drops a trip whose dates overlap one the viewer is approved on', async () => {
+    const { service } = discoverWith(
+      [{ tripId: 'on', status: 'APPROVED', trip: { startDate: day(10), endDate: day(15) } }],
+      [candidate('clash', 14, 18), candidate('clear', 16, 18)],
+    );
+    const result = await service.discover('viewer', {} as never);
+    expect(result.map((t: { id: string }) => t.id)).toEqual(['clear']);
+  });
+
+  it('does not treat a pending request or a trip left as taking those dates', async () => {
+    const { service } = discoverWith(
+      [
+        { tripId: 'asked', status: 'REQUESTED', trip: { startDate: day(10), endDate: day(15) } },
+        { tripId: 'left', status: 'LEFT', trip: { startDate: day(10), endDate: day(15) } },
+      ],
+      [candidate('same-dates', 12, 14)],
+    );
+    const result = await service.discover('viewer', {} as never);
+    expect(result.map((t: { id: string }) => t.id)).toEqual(['same-dates']);
+  });
+});
+
 describe('TripsService - suspended and closed accounts', () => {
   const tripWith = (hostStatus: string, extra: Record<string, unknown> = {}) => ({
     id: 'trip-1',

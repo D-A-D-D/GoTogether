@@ -174,6 +174,7 @@ export class ExpensesService {
   async list(tripId: string, userId: string) {
     await this.assertCanAccess(tripId, userId);
     const expenses = await this.prisma.expense.findMany({
+      relationLoadStrategy: 'join',
       where: { tripId },
       include: EXPENSE_INCLUDE,
       orderBy: { createdAt: 'desc' },
