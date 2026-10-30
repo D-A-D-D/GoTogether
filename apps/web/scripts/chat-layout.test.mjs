@@ -1,17 +1,17 @@
 // Tests for src/lib/chat-layout.ts. Run with `npm run test --workspace apps/web`.
-// (chat-layout imports format via an alias, so it is exercised through a tiny loader below.)
+// (chat-layout imports format via an alias, so it is exercised through a tiny loader below -
+// built from file URLs, so it behaves the same on Windows and Linux.)
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
 import { stripTypeScriptTypes } from 'node:module';
 
 // Load the module with its '@/lib/format' alias pointed at the real file.
 const dir = new URL('../src/lib/', import.meta.url);
 const source = stripTypeScriptTypes(readFileSync(new URL('chat-layout.ts', dir), 'utf8')).replace(
   "from '@/lib/format'",
-  `from '${pathToFileURL(new URL('format.ts', dir).pathname.replace(/^\//, '')).href}'`,
+  `from '${new URL('format.ts', dir).href}'`,
 );
 const { layoutChat, CLUSTER_GAP_MS } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 
