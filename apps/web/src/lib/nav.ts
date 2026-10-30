@@ -21,6 +21,11 @@ const FIXED: Record<string, RouteMeta> = {
   '/profile': { title: 'Profile', back: null, tab: true, immersive: false },
   '/trips/new': { title: 'Host a trip', back: '/trips/discover', ...PLAIN },
   '/admin': { title: 'Admin', back: '/profile', ...PLAIN },
+  '/settings': { title: 'Settings', back: '/profile', ...PLAIN },
+  '/settings/notifications': { title: 'Notifications', back: '/settings', ...PLAIN },
+  '/settings/blocked': { title: 'Blocked people', back: '/settings', ...PLAIN },
+  '/settings/history': { title: 'Travel history', back: '/settings', ...PLAIN },
+  '/settings/account': { title: 'Account and data', back: '/settings', ...PLAIN },
   '/login': { title: 'Log in', back: '/', ...PLAIN },
   '/register': { title: 'Sign up', back: '/', ...PLAIN },
   '/forgot-password': { title: 'Reset password', back: '/login', ...PLAIN },
@@ -61,7 +66,7 @@ export function activeTab(pathname: string): 'discover' | 'mine' | 'new' | 'prof
   if (pathname === '/trips/discover') return 'discover';
   if (pathname === '/trips/mine') return 'mine';
   if (pathname === '/trips/new') return 'new';
-  if (pathname === '/profile' || pathname === '/admin') return 'profile';
+  if (pathname === '/profile' || pathname === '/admin' || pathname === '/settings' || pathname.startsWith('/settings/')) return 'profile';
   return null;
 }
 

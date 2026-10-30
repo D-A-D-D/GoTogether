@@ -3,6 +3,7 @@ import { Bricolage_Grotesque, Instrument_Sans } from "next/font/google";
 import { RegisterServiceWorker } from "@/components/register-service-worker";
 import { AppShell } from "@/components/app-shell";
 import { AuthProvider } from "@/lib/auth-context";
+import { BOOT_SCRIPT } from "@/lib/preferences";
 import "./globals.css";
 
 // Headings in a grotesque with some personality; body in a plain, open sans that stays readable at
@@ -33,8 +34,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F2E6D6" },
-    { media: "(prefers-color-scheme: dark)", color: "#0A1B1A" },
+    { media: "(prefers-color-scheme: light)", color: "#FFF6EA" },
+    { media: "(prefers-color-scheme: dark)", color: "#071B1C" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -43,7 +44,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable} h-full antialiased`}>
+    // suppressHydrationWarning: the script below sets theme/text-size attributes on <html> before React
+    // loads, which is the point (no flash of the wrong theme) - React should not treat them as a mismatch.
+    <html lang="en" className={`${display.variable} ${body.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
+      </head>
       <body className="min-h-full">
         <RegisterServiceWorker />
         <AuthProvider>

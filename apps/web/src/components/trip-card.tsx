@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { getTrip, type DiscoveredTrip, type Trip } from '@/lib/api';
 import { formatBudget, formatDateRange, plural, tripDays } from '@/lib/format';
 import { prefetchQuery } from '@/lib/query';
-import { Avatar, Chip, Skeleton, TripCover } from '@/components/ui';
+import { Chip, Skeleton, TripCover } from '@/components/ui';
+import { UserAvatar } from '@/components/user-avatar';
 import { IconCalendar, IconShield, IconUsers, IconWallet } from '@/components/icons';
 
 /** Starts loading a trip's details as soon as a pointer or finger reaches its card. */
@@ -65,7 +66,7 @@ export function TripCard({ trip }: { trip: Trip | DiscoveredTrip }) {
         )}
 
         <div className="flex items-center gap-3 border-t border-line pt-3">
-          <Avatar name={trip.host.name} size={36} />
+          <UserAvatar user={trip.host} size={36} />
           <div className="min-w-0 flex-1">
             <p className="truncate font-semibold leading-tight">{trip.host.name}</p>
             <p className="truncate text-[0.9rem] text-muted">{trip.host.homeCity ? `Hosting from ${trip.host.homeCity}` : 'Host'}</p>
@@ -74,7 +75,7 @@ export function TripCard({ trip }: { trip: Trip | DiscoveredTrip }) {
             className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-[0.9rem] font-semibold"
             title="Trust score"
           >
-            <IconShield size={16} className="text-accent" />
+            <IconShield size={16} className="text-accent-ink" />
             {Math.round(trip.host.trustScore)}
           </span>
         </div>

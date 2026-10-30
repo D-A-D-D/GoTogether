@@ -46,3 +46,31 @@ export function layoutChat<M extends LayoutMessage>(messages: M[], now: Date = n
   });
   return items;
 }
+
+/** How far someone has read, as the time of the newest message they have seen. */
+export interface ReaderMark {
+  userId: string;
+  /** The createdAt of the last message they read. */
+  at: string;
+}
+
+/**
+ * Where each reader's "seen" marker goes: under the newest message they have read - but not one they wrote
+ * themselves (their own message is not something they "saw"), so it goes under the newest one by someone
+ * else. Messages must be oldest first. Returns message id -> the readers to show under it, in the order given.
+ */
+export function placeReaders<M extends LayoutMessage>(messages: M[], marks: ReaderMark[]): Map<string, string[]> {
+  const placed = new Map<string, string[]>();
+  for (const mark of marks) {
+    const at = Date.parse(mark.at);
+    if (Number.isNaN(at)) continue;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (Date.parse(message.createdAt) <= at && message.senderId !== mark.userId) {
+        placed.set(message.id, [...(placed.get(message.id) ?? []), mark.userId]);
+        break;
+      }
+    }
+  }
+  return placed;
+}

@@ -69,7 +69,7 @@ export function NoteForm({ label, confirmLabel, danger = false, onSubmit, onCanc
           type="button"
           onClick={onCancel}
           disabled={busy}
-          className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent underline-offset-4 hover:underline"
+          className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent-ink underline-offset-4 hover:underline"
         >
           Cancel
         </button>

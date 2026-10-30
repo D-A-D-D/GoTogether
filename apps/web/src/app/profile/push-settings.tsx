@@ -6,8 +6,11 @@ import { useAuth } from '@/lib/auth-context';
 import { disablePush, enablePush, getPushStatus, PushPermissionError, type PushStatus } from '@/lib/push';
 import { ErrorText, PrimaryButton } from '@/components/form-controls';
 
-/** Push notifications for this device: whether they're on, and the switch. */
-export function PushSettings() {
+/**
+ * Push notifications for this device: whether they're on, and the switch.
+ * `standalone` is for a page that already carries the title: no heading, no margin made for sitting below other content.
+ */
+export function PushSettings({ standalone = false }: { standalone?: boolean }) {
   const { user } = useAuth();
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,8 +66,8 @@ export function PushSettings() {
   }
 
   return (
-    <section className="mt-12">
-      <h2 className="text-xl font-bold">Notifications</h2>
+    <section className={standalone ? undefined : 'mt-12'}>
+      {!standalone && <h2 className="text-xl font-bold">Notifications</h2>}
 
       {status === null && <p className="mt-1 text-[0.95rem] text-muted">Checking this device…</p>}
 
@@ -90,12 +93,12 @@ export function PushSettings() {
               </PrimaryButton>
             ) : (
               <>
-                <span className="text-[0.95rem] text-accent">Notifications are on for this device.</span>
+                <span className="text-[0.95rem] text-accent-ink">Notifications are on for this device.</span>
                 <button
                   type="button"
                   onClick={handleDisable}
                   disabled={busy}
-                  className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent underline-offset-4 hover:underline disabled:opacity-50"
+                  className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent-ink underline-offset-4 hover:underline disabled:opacity-50"
                 >
                   {busy ? 'Turning off…' : 'Turn off'}
                 </button>

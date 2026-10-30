@@ -1,19 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import { ApiError, getMe, getTags, updateMe, type Tag } from '@/lib/api';
 import { queryCache, useQuery } from '@/lib/query';
 import { Label, TextInput, TextArea, ErrorText, PrimaryButton } from '@/components/form-controls';
-import { Avatar, Button, Card, Chip, Skeleton } from '@/components/ui';
-import { IconCheck, IconLogout, IconShield } from '@/components/icons';
-import { AccountSettings } from './account-settings';
+import { ButtonLink, Card, Chip, Skeleton } from '@/components/ui';
+import { AvatarPicker } from '@/components/avatar-picker';
+import { IconCheck, IconSettings, IconShield } from '@/components/icons';
 import { EmailVerification } from './email-verification';
-import { BlockedPeople } from './blocked-people';
-import { PushSettings } from './push-settings';
-import { TrustHistory } from './trust-history';
 
 const CATEGORY_LABELS: Record<Tag['category'], string> = {
   STYLE: 'Trip style',
@@ -24,8 +20,7 @@ const CATEGORY_LABELS: Record<Tag['category'], string> = {
 
 export default function ProfilePage() {
   const status = useRequireAuth();
-  const { refreshUser, logout } = useAuth();
-  const router = useRouter();
+  const { refreshUser } = useAuth();
   const signedIn = status === 'authenticated';
 
   const meQuery = useQuery('me', getMe, { enabled: signedIn, staleMs: 15_000 });
@@ -103,11 +98,6 @@ export default function ProfilePage() {
     }
   }
 
-  async function handleLogout() {
-    await logout();
-    router.push('/');
-  }
-
   if (!signedIn && status !== 'loading') return null;
 
   if (meQuery.error && !profile) {
@@ -139,7 +129,7 @@ export default function ProfilePage() {
       <EmailVerification />
 
       <section className="flex items-center gap-4" aria-label="You">
-        <Avatar name={profile.name} size={84} />
+        <AvatarPicker size={92} />
         <div className="min-w-0 flex-1">
           <p className="truncate font-display text-2xl font-bold leading-tight">{profile.name}</p>
           <p className="truncate text-muted">{profile.email}</p>
@@ -225,7 +215,7 @@ export default function ProfilePage() {
             {saving ? 'Saving…' : 'Save changes'}
           </PrimaryButton>
           {saved && (
-            <p role="status" className="inline-flex items-center gap-1.5 font-semibold text-accent">
+            <p role="status" className="inline-flex items-center gap-1.5 font-semibold text-accent-ink">
               <IconCheck size={20} />
               Saved
             </p>
@@ -233,16 +223,11 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <PushSettings />
-      <BlockedPeople />
-      <TrustHistory />
-      <AccountSettings />
-
       <div className="mt-10 border-t border-line pt-6">
-        <Button variant="secondary" onClick={handleLogout}>
-          <IconLogout size={20} />
-          Log out
-        </Button>
+        <ButtonLink href="/settings" variant="secondary">
+          <IconSettings size={20} />
+          Settings and privacy
+        </ButtonLink>
       </div>
     </main>
   );

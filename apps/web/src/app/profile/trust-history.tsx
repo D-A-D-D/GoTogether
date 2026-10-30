@@ -78,7 +78,7 @@ export function TrustHistory() {
                 <div className="text-right">
                   <span
                     className={`font-mono font-semibold ${
-                      event.delta > 0 ? 'text-accent' : event.delta < 0 ? 'text-danger' : 'text-muted'
+                      event.delta > 0 ? 'text-accent-ink' : event.delta < 0 ? 'text-danger' : 'text-muted'
                     }`}
                   >
                     {formatDelta(event.delta)}

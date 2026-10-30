@@ -47,6 +47,23 @@ describe('routeMeta', () => {
   });
 });
 
+describe('settings screens', () => {
+  it('open from the profile, and their sub-screens go back to Settings', () => {
+    assert.equal(routeMeta('/settings').back, '/profile');
+    for (const path of ['/settings/notifications', '/settings/blocked', '/settings/history', '/settings/account']) {
+      const meta = routeMeta(path);
+      assert.equal(meta.back, '/settings', path);
+      assert.equal(meta.tab, false, path);
+      assert.ok(meta.title.length > 0, path);
+    }
+  });
+
+  it('keep the Profile tab lit while you are inside Settings', () => {
+    for (const path of ['/settings', '/settings/blocked', '/settings/history']) assert.equal(activeTab(path), 'profile', path);
+    assert.equal(activeTab('/settingsfoo'), null);
+  });
+});
+
 describe('activeTab', () => {
   it('lights up the matching tab, and nothing for a trip page', () => {
     assert.equal(activeTab('/trips/discover'), 'discover');

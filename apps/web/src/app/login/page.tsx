@@ -76,7 +76,7 @@ export default function LoginPage() {
 
       <p className="mt-6 text-center text-[0.95rem] text-muted">
         New to GoTogether?{' '}
-        <Link href="/register" className="text-accent hover:underline">
+        <Link href="/register" className="text-accent-ink hover:underline">
           Create an account
         </Link>
       </p>

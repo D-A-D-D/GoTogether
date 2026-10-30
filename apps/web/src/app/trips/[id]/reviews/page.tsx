@@ -15,7 +15,8 @@ import {
   type TripDetail,
 } from '@/lib/api';
 import { ErrorText } from '@/components/form-controls';
-import { Avatar, Button, Card, Skeleton } from '@/components/ui';
+import { Button, Card, Skeleton } from '@/components/ui';
+import { UserAvatar } from '@/components/user-avatar';
 import { ReviewForm } from './review-form';
 
 const dateFormat = new Intl.DateTimeFormat('en-GB', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -125,7 +126,7 @@ export default function TripReviewsPage() {
                   <li key={person.id}>
                    <Card className="p-4">
                     <div className="flex items-center gap-3">
-                      <Avatar name={person.name} size={44} />
+                      <UserAvatar user={person} size={44} />
                       <span className="min-w-0 flex-1 truncate text-lg font-semibold">{person.name}</span>
                       {reviewingId !== person.id && (
                         <Button variant="secondary" size="sm" onClick={() => setReviewingId(person.id)}>
@@ -163,7 +164,7 @@ export default function TripReviewsPage() {
                   <li key={review.id}>
                    <Card className="p-4">
                     <div className="flex items-center gap-3">
-                      <Avatar name={review.reviewer.name} size={36} />
+                      <UserAvatar user={review.reviewer} size={36} />
                       <p className="min-w-0">
                         <span className="font-semibold">{review.reviewer.name}</span>
                         <span className="text-[0.9rem] text-muted"> &middot; {dateFormat.format(new Date(review.createdAt))}</span>

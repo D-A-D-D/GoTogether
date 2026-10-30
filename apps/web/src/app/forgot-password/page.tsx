@@ -39,7 +39,7 @@ export default function ForgotPasswordPage() {
         <p className="mt-3 text-base text-muted">
           Nothing arrived? Look in your spam folder, and check the address is spelled the way you signed up.
         </p>
-        <Link href="/login" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
+        <Link href="/login" className="mt-6 font-semibold text-accent-ink underline-offset-4 hover:underline">
           Back to log in
         </Link>
       </AuthLayout>
@@ -74,7 +74,7 @@ export default function ForgotPasswordPage() {
 
       <p className="mt-6 text-center text-[0.95rem] text-muted">
         Remembered it?{' '}
-        <Link href="/login" className="text-accent hover:underline">
+        <Link href="/login" className="text-accent-ink hover:underline">
           Log in
         </Link>
       </p>

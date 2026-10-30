@@ -91,7 +91,7 @@ export function Landing() {
           <ol className="mt-8 grid gap-8 md:grid-cols-3">
             {STEPS.map((step) => (
               <li key={step.n}>
-                <span className="font-display text-5xl font-extrabold text-accent/70">{step.n}</span>
+                <span className="font-display text-5xl font-extrabold text-accent-ink/70">{step.n}</span>
                 <h3 className="mt-2 text-xl font-bold">{step.title}</h3>
                 <p className="mt-2 leading-relaxed text-muted">{step.body}</p>
               </li>
@@ -121,7 +121,7 @@ export function Landing() {
                 <p className="text-[0.9rem] text-muted">{note}</p>
               </div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 font-bold">
-                <IconShield size={18} className="text-accent" />
+                <IconShield size={18} className="text-accent-ink" />
                 {score}
               </span>
             </div>
@@ -131,10 +131,10 @@ export function Landing() {
       </section>
 
       <section className="mx-auto w-full max-w-6xl px-5 pb-16">
-        <div className="rounded-[2rem] bg-forest px-6 py-12 text-center text-[#F2E6D6] sm:px-12">
+        <div className="rounded-[2rem] bg-forest px-6 py-12 text-center text-on-forest sm:px-12">
           <h2 className="font-display text-3xl font-bold sm:text-4xl">Your next trip is better with the right people.</h2>
-          <p className="mx-auto mt-3 max-w-xl text-lg text-[#F2E6D6]/80">Make an account in a minute and see what is open.</p>
-          <ButtonLink href="/register" size="lg" className="mt-7 !bg-gold !text-[#10312F]">
+          <p className="mx-auto mt-3 max-w-xl text-lg text-on-forest/80">Make an account in a minute and see what is open.</p>
+          <ButtonLink href="/register" size="lg" className="mt-7 !bg-gold !text-on-gold">
             Create your account
           </ButtonLink>
         </div>

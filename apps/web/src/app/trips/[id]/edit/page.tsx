@@ -74,7 +74,7 @@ export default function EditTripPage() {
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-start gap-3 px-4 py-8">
       <h1 className="sr-only">Edit trip</h1>
       <p className="text-lg text-muted">{text}</p>
-      <Link href={`/trips/${tripId}`} className="font-semibold text-accent underline-offset-4 hover:underline">
+      <Link href={`/trips/${tripId}`} className="font-semibold text-accent-ink underline-offset-4 hover:underline">
         Back to the trip
       </Link>
     </main>

@@ -4,8 +4,11 @@ import { useEffect, useState } from 'react';
 import { ApiError, listBlockedUsers, unblockUser, type BlockedUser } from '@/lib/api';
 import { ErrorText } from '@/components/form-controls';
 
-/** The people you've blocked, with a way to undo it. Never shows who has blocked you. */
-export function BlockedPeople() {
+/**
+ * The people you've blocked, with a way to undo it. Never shows who has blocked you.
+ * `standalone` is for a page that already carries the title: no heading, no margin made for sitting below other content.
+ */
+export function BlockedPeople({ standalone = false }: { standalone?: boolean }) {
   const [blocked, setBlocked] = useState<BlockedUser[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -30,9 +33,9 @@ export function BlockedPeople() {
   }
 
   return (
-    <section className="mt-12">
-      <h2 className="text-xl font-bold">Blocked people</h2>
-      <p className="mt-1 text-[0.95rem] text-muted">
+    <section className={standalone ? undefined : 'mt-12'}>
+      {!standalone && <h2 className="text-xl font-bold">Blocked people</h2>}
+      <p className={`text-[0.95rem] text-muted ${standalone ? '' : 'mt-1'}`}>
         You and anyone you block don&apos;t see each other in discovery, on trip pages, in travellers lists or in chat.
         They aren&apos;t told. You can block someone from a trip you share.
       </p>
@@ -55,7 +58,7 @@ export function BlockedPeople() {
                   type="button"
                   onClick={() => handleUnblock(b.user.id)}
                   disabled={busyId === b.user.id}
-                  className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent underline-offset-4 hover:underline disabled:opacity-50"
+                  className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent-ink underline-offset-4 hover:underline disabled:opacity-50"
                 >
                   {busyId === b.user.id ? 'Unblocking…' : 'Unblock'}
                 </button>

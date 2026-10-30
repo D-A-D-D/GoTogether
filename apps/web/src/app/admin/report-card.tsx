@@ -11,7 +11,7 @@ type Action = 'dismiss' | 'resolve' | 'suspend' | 'ban' | null;
 
 const STATUS_STYLE: Record<AdminReport['status'], string> = {
   OPEN: 'bg-accent-2/10 text-accent-2',
-  REVIEWING: 'bg-accent/10 text-accent',
+  REVIEWING: 'bg-accent/10 text-accent-ink',
   ACTIONED: 'bg-foreground/5 text-muted',
   DISMISSED: 'bg-foreground/5 text-muted',
 };

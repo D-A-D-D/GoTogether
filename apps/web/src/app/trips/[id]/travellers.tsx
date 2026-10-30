@@ -10,7 +10,8 @@ import {
   type TripMember,
 } from '@/lib/api';
 import { ErrorText, Label, PrimaryButton, Select, TextArea } from '@/components/form-controls';
-import { Avatar, Button, Card, Chip } from '@/components/ui';
+import { Button, Card, Chip } from '@/components/ui';
+import { UserAvatar } from '@/components/user-avatar';
 import { IconShield } from '@/components/icons';
 
 interface TravellersProps {
@@ -46,7 +47,7 @@ export function Travellers({ tripId, members, meId, onChanged }: TravellersProps
             <li key={m.userId}>
               <Card className="p-4">
                 <div className="flex items-center gap-3">
-                  <Avatar name={m.user.name} size={44} />
+                  <UserAvatar user={m.user} size={44} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold leading-tight">
                       {m.user.name}
@@ -54,7 +55,7 @@ export function Travellers({ tripId, members, meId, onChanged }: TravellersProps
                     </p>
                     <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[0.9rem] text-muted">
                       <span className="inline-flex items-center gap-1">
-                        <IconShield size={15} className="text-accent" />
+                        <IconShield size={15} className="text-accent-ink" />
                         Trust {Math.round(m.user.trustScore)}
                       </span>
                       {m.role === 'HOST' && (

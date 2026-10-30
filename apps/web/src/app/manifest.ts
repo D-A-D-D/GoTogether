@@ -10,8 +10,8 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     orientation: 'portrait-primary',
-    background_color: '#F2E6D6',
-    theme_color: '#0F3D3A',
+    background_color: '#FFF6EA',
+    theme_color: '#0B4B45',
     // Same two files serve both purposes — the mark sits well inside the
     // maskable safe zone (Android's inner ~80% circle), so no separate
     // maskable-only asset is needed.

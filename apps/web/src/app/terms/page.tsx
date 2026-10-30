@@ -35,6 +35,10 @@ export default function TermsPage() {
       <ul>
         <li>harass, threaten, discriminate against or deceive other members;</li>
         <li>post anything unlawful, or that you don&apos;t have the right to share;</li>
+        <li>
+          send pictures or voice messages that are sexual, violent or abusive, or that show or record someone without
+          their consent;
+        </li>
         <li>pretend to be someone else, or write false or retaliatory reviews or reports;</li>
         <li>try to get round limits, probe or attack the service, or collect other members&apos; data;</li>
         <li>use GoTogether to sell things or to recruit for anything other than a trip.</li>
@@ -61,7 +65,7 @@ export default function TermsPage() {
 
       <h2>Ending things</h2>
       <p>
-        You can delete your account at any time from your profile. We may suspend or close an account that breaks these
+        You can delete your account at any time from Profile → Settings. We may suspend or close an account that breaks these
         terms or puts others at risk.
       </p>
 

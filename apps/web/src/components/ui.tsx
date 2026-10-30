@@ -8,7 +8,7 @@ export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-on-accent hover:brightness-110 disabled:opacity-50',
+  primary: 'btn-shadow bg-accent text-on-accent hover:brightness-110 disabled:opacity-50 disabled:shadow-none',
   secondary: 'border border-field bg-surface text-foreground hover:bg-surface-2 disabled:opacity-50',
   ghost: 'text-foreground hover:bg-surface-2 disabled:opacity-50',
   danger: 'border border-danger text-danger hover:bg-danger/10 disabled:opacity-50',
@@ -85,8 +85,8 @@ export function Card({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
 export function Chip({ children, tone = 'plain', className }: { children: ReactNode; tone?: 'plain' | 'accent' | 'gold'; className?: string }) {
   const tones = {
     plain: 'bg-surface-2 text-foreground',
-    accent: 'bg-accent-soft text-accent',
-    gold: 'bg-gold text-[#10312F]',
+    accent: 'bg-accent-soft text-accent-ink',
+    gold: 'bg-gold text-on-gold',
   };
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[0.9rem] font-medium ${tones[tone]} ${className ?? ''}`}>
@@ -113,12 +113,12 @@ export function EmptyState({ title, children, action }: { title: string; childre
 
 // Background / text pairs, each checked at 4.5:1 or better.
 const AVATAR_TONES = [
-  ['#0F3D3A', '#F2E6D6'],
-  ['#AE3B26', '#FFF6EA'],
-  ['#F4B13B', '#10312F'],
-  ['#3D1F1D', '#F6C98A'],
-  ['#1F6F63', '#FFF6EA'],
-  ['#E9DAC4', '#10312F'],
+  ['#0B4B45', '#FFF1DE'],
+  ['#D23A14', '#FFFFFF'],
+  ['#FFB41F', '#0A2F2C'],
+  ['#7B1D3A', '#FFE3EA'],
+  ['#0B7D6E', '#FFFFFF'],
+  ['#FFE8CF', '#0A2F2C'],
 ] as const;
 
 export function initialsOf(name: string): string {

@@ -5,7 +5,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { activeTab, createVisitStack, routeMeta } from '@/lib/nav';
-import { Avatar, ButtonLink, IconButton } from '@/components/ui';
+import { ButtonLink, IconButton } from '@/components/ui';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { UserAvatar } from '@/components/user-avatar';
 import { SiteFooter } from '@/components/site-footer';
 import {
   IconBack,
@@ -13,6 +15,7 @@ import {
   IconCompass,
   IconLogout,
   IconPlus,
+  IconSettings,
   IconShield,
   IconUser,
   LogoMark,
@@ -24,7 +27,7 @@ const visits = createVisitStack();
 
 function Wordmark({ className = '' }: { className?: string }) {
   return (
-    <span className={`inline-flex items-center gap-2 text-accent ${className}`}>
+    <span className={`inline-flex items-center gap-2 text-accent-ink ${className}`}>
       <LogoMark size={26} />
       <span className="font-display text-[1.35rem] font-bold tracking-tight text-foreground">GoTogether</span>
     </span>
@@ -68,7 +71,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav aria-label="Main" className="flex flex-1 flex-col gap-1">
             <RailLink href="/trips/discover" label="Discover" active={current === 'discover'} icon={<IconCompass size={26} />} />
             <RailLink href="/trips/mine" label="My trips" active={current === 'mine'} icon={<IconBag size={26} />} />
-            <RailLink href="/profile" label="Profile" active={current === 'profile'} icon={<IconUser size={26} />} />
+            <RailLink href="/profile" label="Profile" active={pathname === '/profile'} icon={<IconUser size={26} />} />
+            <RailLink href="/settings" label="Settings" active={pathname.startsWith('/settings')} icon={<IconSettings size={26} />} />
             {user?.role === 'ADMIN' && (
               <RailLink href="/admin" label="Admin" active={pathname === '/admin'} icon={<IconShield size={26} />} />
             )}
@@ -78,7 +82,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </ButtonLink>
           </nav>
           <div className="flex items-center gap-3 border-t border-line px-2 pt-4">
-            {user && <Avatar name={user.name} size={40} />}
+            {user && <UserAvatar user={user} size={40} />}
             <span className="min-w-0 flex-1 truncate font-medium">{user?.name}</span>
             <IconButton label="Log out" onClick={handleLogout}>
               <IconLogout size={22} />
@@ -93,7 +97,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-1 px-3 sm:px-4">
             {meta.tab ? (
               <Link href={authed ? '/trips/discover' : '/'} className={`mr-1 ${authed ? 'md:hidden' : ''}`} aria-label="GoTogether home">
-                {authed ? <LogoMark size={30} className="text-accent" /> : <Wordmark />}
+                {authed ? <LogoMark size={30} className="text-accent-ink" /> : <Wordmark />}
               </Link>
             ) : (
               <IconButton label="Back" onClick={goBack} className="-ml-1">
@@ -106,6 +110,17 @@ export function AppShell({ children }: { children: ReactNode }) {
               </p>
             )}
             {!meta.title && <span className="flex-1" />}
+            {authed && <ThemeToggle />}
+            {authed && pathname === '/profile' && (
+              <Link
+                href="/settings"
+                aria-label="Settings"
+                title="Settings"
+                className="pressable inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-surface-2"
+              >
+                <IconSettings size={24} />
+              </Link>
+            )}
             {status === 'unauthenticated' && (
               <nav aria-label="Account" className="flex items-center gap-1.5">
                 {pathname !== '/login' && (
@@ -162,7 +177,7 @@ function RailLink({ href, label, icon, active }: { href: string; label: string; 
       href={href}
       aria-current={active ? 'page' : undefined}
       className={`pressable flex h-12 items-center gap-4 rounded-xl px-3 text-lg ${
-        active ? 'bg-accent-soft font-bold text-accent' : 'font-medium hover:bg-surface-2'
+        active ? 'bg-accent-soft font-bold text-accent-ink' : 'font-medium hover:bg-surface-2'
       }`}
     >
       {icon}
@@ -178,7 +193,7 @@ function TabLink({ href, label, icon, active }: { href: string; label: string; i
         href={href}
         aria-current={active ? 'page' : undefined}
         className={`pressable flex h-16 flex-col items-center justify-center gap-0.5 text-[0.8rem] ${
-          active ? 'font-bold text-accent' : 'font-medium text-muted'
+          active ? 'font-bold text-accent-ink' : 'font-medium text-muted'
         }`}
       >
         {icon}

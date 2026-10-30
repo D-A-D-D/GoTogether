@@ -100,11 +100,12 @@ export function AccountSettings() {
         ) : (
           <form onSubmit={handleDelete} className="mt-1 flex flex-col gap-3">
             <ul className="list-disc space-y-1 pl-5 text-[0.95rem] text-muted">
-              <li>Your profile, sign-in, notifications, blocks and trust history are deleted.</li>
+              <li>Your profile (including your profile picture), sign-in, notifications, blocks and trust history are deleted.</li>
               <li>You leave any trip that hasn&apos;t finished, and your pending requests are withdrawn.</li>
               <li>
-                Messages you sent, expenses you shared and reviews you wrote stay on other people&apos;s trips, shown as
-                &ldquo;Deleted user&rdquo; — they&apos;re part of other people&apos;s records and they need them to settle up.
+                Messages you sent (with any pictures or voice messages in them), expenses you shared and reviews you wrote
+                stay on other people&apos;s trips, shown as &ldquo;Deleted user&rdquo; — they&apos;re part of other
+                people&apos;s records and they need them to settle up.
               </li>
               <li>You can&apos;t delete while you host a trip that hasn&apos;t finished — cancel or complete it first.</li>
               <li>You can sign up again later, but as a new person: nothing carries over.</li>
@@ -141,7 +142,7 @@ export function AccountSettings() {
                   setDeleteError(null);
                 }}
                 disabled={deleting}
-                className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent underline-offset-4 hover:underline disabled:opacity-50"
+                className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent-ink underline-offset-4 hover:underline disabled:opacity-50"
               >
                 Cancel
               </button>

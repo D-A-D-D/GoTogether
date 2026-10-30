@@ -21,7 +21,8 @@ import { invalidateQueries, queryCache, useQuery } from '@/lib/query';
 import { formatBudget, formatDateRange, plural, tripDays } from '@/lib/format';
 import { Travellers } from './travellers';
 import { ErrorText } from '@/components/form-controls';
-import { Avatar, Button, Card, Chip, Skeleton, TripCover } from '@/components/ui';
+import { Button, Card, Chip, Skeleton, TripCover } from '@/components/ui';
+import { UserAvatar } from '@/components/user-avatar';
 import { IconCalendar, IconChat, IconEdit, IconShield, IconStar, IconUsers, IconWallet } from '@/components/icons';
 
 // Mirror the API's rules in apps/api/src/trips/trip-rules.ts, which are the
@@ -61,7 +62,7 @@ function ActionTile({ href, icon, label }: Tile) {
       href={href}
       className="pressable flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-2xl border border-line bg-surface px-2 py-3 text-center text-[0.95rem] font-semibold shadow-card"
     >
-      <span className="text-accent">{icon}</span>
+      <span className="text-accent-ink">{icon}</span>
       {label}
     </Link>
   );
@@ -250,14 +251,14 @@ export default function TripDetailPage() {
       )}
 
       <Card className="mt-5 flex items-center gap-4 p-4">
-        <Avatar name={trip.host.name} size={52} />
+        <UserAvatar user={trip.host} size={52} />
         <div className="min-w-0 flex-1">
           <p className="text-[0.9rem] text-muted">Hosted by</p>
           <p className="truncate text-lg font-semibold leading-tight">{trip.host.name}</p>
           {trip.host.homeCity && <p className="truncate text-[0.95rem] text-muted">{trip.host.homeCity}</p>}
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 font-semibold" title="Trust score">
-          <IconShield size={18} className="text-accent" />
+          <IconShield size={18} className="text-accent-ink" />
           {Math.round(trip.host.trustScore)}
         </span>
       </Card>
@@ -282,7 +283,7 @@ export default function TripDetailPage() {
       )}
       {!isHost && !isCancelled && trip.myMembership?.status === 'APPROVED' && (
         <Card className="mt-6 flex items-center justify-between gap-3 p-4">
-          <span className="font-semibold text-accent">You&rsquo;re in. Have a great trip.</span>
+          <span className="font-semibold text-accent-ink">You&rsquo;re in. Have a great trip.</span>
           <Button variant="ghost" size="sm" onClick={() => run(() => leaveTrip(tripId), 'Could not do that.')} disabled={busy}>
             Leave trip
           </Button>
@@ -339,7 +340,7 @@ export default function TripDetailPage() {
             {requests?.map((r) => (
               <li key={r.id}>
                 <Card className="flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
-                  <Avatar name={r.user.name} size={44} />
+                  <UserAvatar user={r.user} size={44} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold">{r.user.name}</p>
                     <p className="text-[0.9rem] text-muted">

@@ -130,6 +130,7 @@ The web app's trip screens are static pages made on demand (that is what makes o
 - **Cold starts.** On Neon's free tier the database suspends when idle and the first requests after a wake-up can fail with `Can't reach database server` (seen repeatedly during development). `/health/ready` reports it (503). For production use a plan that does not suspend the compute, or accept that the first visitor after quiet periods will see errors.
 - **Backups.** Neon provides point-in-time restore, with a retention window that depends on the plan. Find out what yours is, and **practise one restore** before launch: a backup you have never restored is a hope, not a backup.
 - **Migrations are additive.** Every migration so far only adds (columns, tables, enum values, indexes). Keep it that way: it is what makes rolling back the application safe (section 7).
+- **Pictures and voice notes are stored in this database** (since 2026-10-30), so it grows with use: a shrunk chat photo is typically a few hundred KB. Watch the database size, and know the plan's storage limit; moving the files to a bucket is logged in IDEAS.md.
 
 ## 6. The API container
 
@@ -188,6 +189,7 @@ Your host's log viewer or a log service (anything that can search JSON) will do;
 
 - **One API instance only, for now.** Chat is a single-process WebSocket gateway with no shared backplane, and the rate limiters, failed-sign-in counts, account-status cache and email caps are in memory. Two instances would each keep separate counts, and a chat message sent on one would not reach a member connected to the other. The fix (Redis for the chat adapter and the limiters) is logged in IDEAS.md; until then, scale the instance *up*, not out.
 - **A restart drops live chat connections** (clients reconnect on their own) and resets the in-memory counters.
+- **Upload size.** Two routes accept a raw file body: a profile picture (up to about 1.7 MB) and a chat file (up to about 4.3 MB). Anything between the browser and the API (a proxy, a CDN) must allow a request body of at least 5 MB, or large pictures will fail with a generic error. The upload and read-receipt rate limits are in memory like the others above.
 - **Emails are fire-and-forget.** A failed send is logged, not retried.
 
 ## 9. First deploy: verify it, in this order

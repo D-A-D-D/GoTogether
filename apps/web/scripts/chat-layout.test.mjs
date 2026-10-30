@@ -13,7 +13,7 @@ const source = stripTypeScriptTypes(readFileSync(new URL('chat-layout.ts', dir),
   "from '@/lib/format'",
   `from '${new URL('format.ts', dir).href}'`,
 );
-const { layoutChat, CLUSTER_GAP_MS } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const { layoutChat, placeReaders, CLUSTER_GAP_MS } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 
 const at = (y, mo, d, h, mi) => new Date(y, mo, d, h, mi).toISOString();
 const msg = (id, senderId, createdAt) => ({ id, senderId, createdAt });
@@ -69,5 +69,51 @@ describe('layoutChat', () => {
     const input = [msg('a', 'u1', at(2027, 5, 13, 9, 0)), msg('b', 'u2', at(2027, 5, 14, 9, 0)), msg('c', 'u1', at(2027, 5, 15, 9, 0))];
     const ids = layoutChat(input, NOW).filter((i) => i.kind === 'message').map((i) => i.key);
     assert.deepEqual(ids, ['a', 'b', 'c']);
+  });
+});
+
+describe('placeReaders', () => {
+  const m = (id, senderId, minute) => msg(id, senderId, at(2027, 5, 15, 9, minute));
+  const thread = [m('a', 'u1', 0), m('b', 'u2', 1), m('c', 'u1', 2), m('d', 'u2', 3)];
+
+  it('puts a reader under the newest message they have read', () => {
+    const placed = placeReaders(thread, [{ userId: 'u3', at: at(2027, 5, 15, 9, 2) }]);
+    assert.deepEqual([...placed], [['c', ['u3']]]);
+  });
+
+  it('puts someone who has read everything under the last message', () => {
+    assert.deepEqual([...placeReaders(thread, [{ userId: 'u3', at: at(2027, 5, 15, 9, 3) }])], [['d', ['u3']]]);
+  });
+
+  it('is exact at the boundary: a message sent at the very moment counts as read', () => {
+    assert.deepEqual([...placeReaders(thread, [{ userId: 'u3', at: at(2027, 5, 15, 9, 1) }])], [['b', ['u3']]]);
+  });
+
+  it('does not put someone under a message they wrote themselves, but the newest by someone else', () => {
+    // u2 has read up to d (their own): their marker belongs under c, the newest message by anybody else
+    assert.deepEqual([...placeReaders(thread, [{ userId: 'u2', at: at(2027, 5, 15, 9, 3) }])], [['c', ['u2']]]);
+  });
+
+  it('groups several readers under the same message, in the order given', () => {
+    const placed = placeReaders(thread, [
+      { userId: 'u3', at: at(2027, 5, 15, 9, 3) },
+      { userId: 'u4', at: at(2027, 5, 15, 9, 3) },
+    ]);
+    assert.deepEqual(placed.get('d'), ['u3', 'u4']);
+  });
+
+  it('shows nothing for someone who has read nothing that is loaded', () => {
+    assert.equal(placeReaders(thread, [{ userId: 'u3', at: at(2027, 5, 15, 8, 0) }]).size, 0);
+  });
+
+  it('ignores a marker with a broken time, and copes with no messages and no readers', () => {
+    assert.equal(placeReaders(thread, [{ userId: 'u3', at: 'not a date' }]).size, 0);
+    assert.equal(placeReaders([], [{ userId: 'u3', at: at(2027, 5, 15, 9, 3) }]).size, 0);
+    assert.equal(placeReaders(thread, []).size, 0);
+  });
+
+  it('finds a place from the time alone, so it works when the message they read is older than what is loaded', () => {
+    const recent = [m('c', 'u1', 2), m('d', 'u2', 3)];
+    assert.deepEqual([...placeReaders(recent, [{ userId: 'u3', at: at(2027, 5, 15, 9, 3) }])], [['d', ['u3']]]);
   });
 });

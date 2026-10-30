@@ -77,7 +77,7 @@ export default function ResetPasswordPage() {
         <p className="mt-3 text-base text-muted">
           Open the link from your email again, exactly as it was sent — or ask for a new one.
         </p>
-        <Link href="/forgot-password" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
+        <Link href="/forgot-password" className="mt-6 font-semibold text-accent-ink underline-offset-4 hover:underline">
           Send me a new link
         </Link>
       </AuthLayout>
@@ -91,7 +91,7 @@ export default function ResetPasswordPage() {
         <p className="mt-3 text-base text-muted">
           You&apos;ve been signed out everywhere, so log in with your new password.
         </p>
-        <Link href="/login" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
+        <Link href="/login" className="mt-6 font-semibold text-accent-ink underline-offset-4 hover:underline">
           Log in
         </Link>
       </AuthLayout>
@@ -133,7 +133,7 @@ export default function ResetPasswordPage() {
 
         <ErrorText>{error}</ErrorText>
         {linkIsBad && (
-          <Link href="/forgot-password" className="font-semibold text-accent underline-offset-4 hover:underline">
+          <Link href="/forgot-password" className="font-semibold text-accent-ink underline-offset-4 hover:underline">
             Send me a new link
           </Link>
         )}

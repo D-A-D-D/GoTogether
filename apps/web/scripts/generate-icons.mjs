@@ -39,11 +39,11 @@ function svg(size) {
   // The mark is the app's logo - two stops joined by a dashed route - on the deep forest
   // colour, kept inside the middle 80% so Android's circular mask never clips it.
   return `<svg width="${size}" height="${size}" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" fill="#0F3D3A"/>
-  <path d="M146 360C146 232 366 290 366 154" fill="none" stroke="#E0745E" stroke-width="30"
+  <rect width="512" height="512" fill="#0B4B45"/>
+  <path d="M146 360C146 232 366 290 366 154" fill="none" stroke="#FF7A57" stroke-width="30"
         stroke-linecap="round" stroke-dasharray="2 68"/>
-  <circle cx="140" cy="372" r="62" fill="#F2E6D6"/>
-  <circle cx="372" cy="140" r="62" fill="none" stroke="#F4B13B" stroke-width="34"/>
+  <circle cx="140" cy="372" r="62" fill="#FFF1DE"/>
+  <circle cx="372" cy="140" r="62" fill="none" stroke="#FFC247" stroke-width="34"/>
 </svg>`;
 }
 

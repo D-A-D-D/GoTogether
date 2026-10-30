@@ -38,6 +38,10 @@ export interface PublicUser {
   hasPassword: boolean;
   /** When they confirmed their email address by following the link we sent; null until then. */
   emailVerifiedAt: string | null;
+  /** When their profile picture was last set; null with none. It goes in the picture's address, so a new one is fetched. */
+  avatarUpdatedAt: string | null;
+  /** Whether they share when they have read the chat - and see when others have. Both or neither. */
+  readReceipts: boolean;
   /** Only ever changed by an operator with database access — see apps/api/scripts/set-role.ts. */
   role: 'USER' | 'ADMIN';
   createdAt: string;
@@ -185,6 +189,38 @@ export function getMe() {
   return apiFetch<PublicUser>('/users/me');
 }
 
+/** Sets the profile picture. Returns the new version, which goes in the picture's address. */
+export function uploadAvatar(file: Blob) {
+  return apiFetch<{ avatarUpdatedAt: string }>('/users/me/avatar', {
+    method: 'PUT',
+    body: file,
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+  });
+}
+
+export function removeAvatar() {
+  return apiFetch<void>('/users/me/avatar', { method: 'DELETE' });
+}
+
+/** Privacy choices that other people can feel. */
+export function updateSettings(data: { readReceipts?: boolean }) {
+  return apiFetch<{ readReceipts: boolean }>('/users/me/settings', { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+/**
+ * Fetches a protected file - a picture or voice note - as a blob. An <img src> cannot carry the session
+ * (it is a header, not a cookie), so files are fetched like any other request and shown from a local address.
+ */
+export async function apiBlob(path: string): Promise<Blob> {
+  let res = await rawFetch(path);
+  if (res.status === 401 && accessToken !== null) {
+    const refreshed = await refreshSession();
+    if (refreshed) res = await rawFetch(path);
+  }
+  if (!res.ok) throw new ApiError(res.status, await readErrorMessage(res));
+  return res.blob();
+}
+
 export function updateMe(data: {
   name?: string;
   bio?: string;
@@ -211,6 +247,7 @@ export interface TripHost {
   name: string;
   trustScore: number;
   homeCity: string | null;
+  avatarUpdatedAt?: string | null;
 }
 
 export interface Trip {
@@ -268,6 +305,7 @@ export interface TripRequest extends TripMembership {
     bio: string | null;
     homeCity: string | null;
     trustScore: number;
+    avatarUpdatedAt?: string | null;
     preferenceTags: Tag[];
   };
 }
@@ -357,13 +395,28 @@ export function leaveTrip(tripId: string) {
 
 // ---------- Chat ----------
 
+export type MessageKind = 'TEXT' | 'IMAGE' | 'VOICE';
+
+/** What is known about a picture or voice note in a message. The bytes are fetched separately, with the session. */
+export interface MessageMedia {
+  id: string;
+  mime: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
+}
+
 export interface ChatMessage {
   id: string;
   roomId: string;
   senderId: string;
+  /** The text; a caption for a picture; empty for a voice note. */
   content: string;
+  kind: MessageKind;
+  media: MessageMedia | null;
   createdAt: string;
-  sender: { id: string; name: string };
+  sender: { id: string; name: string; avatarUpdatedAt?: string | null };
 }
 
 /** Oldest-first within the page. `before` (a message id) pages further back in history. */
@@ -373,13 +426,38 @@ export function listMessages(tripId: string, before?: string, limit = 50) {
   return apiFetch<ChatMessage[]>(`/trips/${tripId}/messages?${query.toString()}`);
 }
 
+/** How far another member has read in this chat. Empty when you have read receipts off: it is a trade. */
+export interface ReadState {
+  userId: string;
+  lastReadMessageId: string | null;
+  lastReadAt: string;
+}
+
+export function getReadStates(tripId: string) {
+  return apiFetch<ReadState[]>(`/trips/${tripId}/read-state`);
+}
+
+/** A picture or voice note uploaded for a trip's chat, ready to be sent as a message. */
+export interface UploadedMedia extends MessageMedia {
+  kind: 'CHAT_IMAGE' | 'CHAT_VOICE';
+}
+
+/** The file itself is the request body, not a form: the type is decided by the server from the bytes. */
+export function uploadChatMedia(tripId: string, file: Blob, durationMs?: number) {
+  return apiFetch<UploadedMedia>(`/trips/${tripId}/media`, {
+    method: 'POST',
+    body: file,
+    headers: { 'Content-Type': file.type || 'application/octet-stream', ...(durationMs !== undefined ? { 'X-Duration-Ms': String(Math.round(durationMs)) } : {}) },
+  });
+}
+
 // ---------- Members & expenses ----------
 
 export interface TripMember {
   id: string;
   userId: string;
   role: MembershipRole;
-  user: { id: string; name: string; trustScore: number };
+  user: { id: string; name: string; trustScore: number; avatarUpdatedAt?: string | null };
 }
 
 /** Approved members only; the API rejects anyone who isn't one. */
@@ -391,6 +469,7 @@ export interface ExpenseUser {
   id: string;
   name: string;
   trustScore: number;
+  avatarUpdatedAt?: string | null;
 }
 
 export interface ExpenseSplit {
@@ -476,6 +555,7 @@ export interface ReviewTarget {
   id: string;
   name: string;
   trustScore: number;
+  avatarUpdatedAt?: string | null;
 }
 
 export interface ReceivedReview {

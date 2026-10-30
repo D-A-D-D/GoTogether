@@ -18,12 +18,17 @@ export default function PrivacyPage() {
           read it). If you sign in with Google, we receive your name and email from Google.
         </li>
         <li>
-          <strong>Your profile:</strong> anything you choose to add — a short bio, your home city and region, and the
-          travel preferences you pick.
+          <strong>Your profile:</strong> anything you choose to add — a profile picture, a short bio, your home city and
+          region, and the travel preferences you pick.
         </li>
         <li>
-          <strong>What you do in the app:</strong> trips you host, requests to join, messages in trip chats, expenses
-          you add or share in, reviews you write, the trust score that results, and reports and blocks you make.
+          <strong>What you do in the app:</strong> trips you host, requests to join, messages in trip chats (including
+          pictures and voice messages you send), expenses you add or share in, reviews you write, the trust score that
+          results, and reports and blocks you make.
+        </li>
+        <li>
+          <strong>Read receipts:</strong> unless you switch them off, how far you have read in each trip chat, so other
+          members who share theirs can see it.
         </li>
         <li>
           <strong>Notifications:</strong> if you turn them on, an address your browser gives us for sending you
@@ -56,27 +61,40 @@ export default function PrivacyPage() {
 
       <h2>Who can see what</h2>
       <p>
-        Other members can see your name, bio, home city, trust score and reviews about you once they are revealed. Your
-        messages and expenses are visible to the people on the trip. Your email address is not shown to other members.
+        Other members can see your name, profile picture, bio, home city, trust score and reviews about you once they
+        are revealed. Your messages (with their pictures and voice messages) and expenses are visible to the people on
+        the trip. Your email address is not shown to other members. Someone you have blocked, or who has blocked you,
+        sees none of this.
+      </p>
+      <p>
+        Read receipts work both ways: if you switch them off, nobody sees how far you have read, and you do not see
+        how far anyone else has. Profile pictures, chat pictures and voice messages are stored in our database with
+        the rest of your data, and are only shown to the people who may see them.
       </p>
 
       <h2>Cookies and storage</h2>
       <p>
         We use one cookie, which keeps you signed in; it is needed for the service to work, so we do not ask for consent
-        for it. Your browser also stores a small note of whether you turned on notifications on that device. We use no
-        advertising or tracking cookies.
+        for it. Your browser also stores a few small notes on that device: whether you turned on notifications, your
+        display choices (theme, text size, reduced motion) and the emoji you used lately. We use no advertising or
+        tracking cookies.
       </p>
 
       <h2>Your choices</h2>
       <ul>
         <li>
-          <strong>See your data:</strong> Profile → Your data → download a copy.
+          <strong>See your data:</strong> Profile → Settings → Account and data → download a copy.
         </li>
         <li>
-          <strong>Delete your account:</strong> Profile → Delete my account. Your profile, sign-in, notifications,
-          blocks and trust history are erased. Messages you sent, expenses you shared and reviews you wrote stay on
-          other people&apos;s trips, shown as &ldquo;Deleted user&rdquo;, because they are part of other people&apos;s
-          records and are needed to settle up. They are no longer linked to your name or email.
+          <strong>Read receipts:</strong> Profile → Settings → Privacy. You can also change or remove your profile
+          picture on your profile.
+        </li>
+        <li>
+          <strong>Delete your account:</strong> Profile → Settings → Account and data → Delete my account. Your
+          profile (including your profile picture), sign-in, notifications, blocks and trust history are erased.
+          Messages you sent (with any pictures or voice messages in them), expenses you shared and reviews you wrote
+          stay on other people&apos;s trips, shown as &ldquo;Deleted user&rdquo;, because they are part of other
+          people&apos;s records and are needed to settle up. They are no longer linked to your name or email.
         </li>
         <li>
           <strong>Correct or ask about your data:</strong> edit your profile in the app, or write to [support email

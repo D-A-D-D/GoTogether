@@ -18,7 +18,8 @@ import {
 import { invalidateQueries, useQuery } from '@/lib/query';
 import { formatMoney } from '@/lib/format';
 import { ErrorText } from '@/components/form-controls';
-import { Avatar, Button, Card, Chip, EmptyState, Skeleton } from '@/components/ui';
+import { Button, Card, Chip, EmptyState, Skeleton } from '@/components/ui';
+import { UserAvatar } from '@/components/user-avatar';
 import { IconPlus } from '@/components/icons';
 import { ExpenseForm } from './expense-form';
 import { formMembers } from './expense-split';
@@ -132,8 +133,8 @@ export default function TripExpensesPage() {
 
       {loadError && <ErrorText>{loadError.message || 'Could not refresh expenses.'}</ErrorText>}
 
-      <section aria-labelledby="balance-heading" className="rounded-3xl bg-forest p-5 text-[#F2E6D6] shadow-card">
-        <h2 id="balance-heading" className="text-[0.95rem] font-semibold text-[#F2E6D6]/75">
+      <section aria-labelledby="balance-heading" className="rounded-3xl bg-forest p-5 text-on-forest shadow-card">
+        <h2 id="balance-heading" className="text-[0.95rem] font-semibold text-on-forest/75">
           Where you stand
         </h2>
         {balances.balances.length === 0 ? (
@@ -143,13 +144,13 @@ export default function TripExpensesPage() {
             <p className="mt-1 font-display text-4xl font-extrabold leading-tight">
               {net >= 0 ? `You’re owed ${formatMoney(net)}` : `You owe ${formatMoney(-net)}`}
             </p>
-            <p className="mt-1 text-[0.95rem] text-[#F2E6D6]/75">
+            <p className="mt-1 text-[0.95rem] text-on-forest/75">
               {formatMoney(balances.totalOwedToYou)} coming to you · {formatMoney(balances.totalYouOwe)} to pay
             </p>
             <ul className="mt-4 flex flex-col gap-2.5 border-t border-white/15 pt-4">
               {balances.balances.map((b) => (
                 <li key={b.counterpart.id} className="flex items-center gap-3">
-                  <Avatar name={b.counterpart.name} size={36} />
+                  <UserAvatar user={b.counterpart} size={36} />
                   <span className="min-w-0 flex-1 truncate">
                     {b.netAmount > 0 ? `${b.counterpart.name} owes you` : `You owe ${b.counterpart.name}`}
                   </span>
@@ -226,7 +227,7 @@ export default function TripExpensesPage() {
                           return (
                             <li key={split.id} className="flex items-center justify-between gap-3">
                               <span className="flex min-w-0 items-center gap-2.5">
-                                <Avatar name={split.user.name} size={28} />
+                                <UserAvatar user={split.user} size={28} />
                                 <span className="truncate">{who(split.user)}</span>
                               </span>
                               <span className="flex shrink-0 items-center gap-3">

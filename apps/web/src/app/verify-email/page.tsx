@@ -40,7 +40,7 @@ export default function VerifyEmailPage() {
         <>
           <h1 className="text-3xl font-bold leading-tight">Email confirmed</h1>
           <p className="mt-3 text-base text-muted">Thanks — your email address is verified.</p>
-          <Link href="/profile" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
+          <Link href="/profile" className="mt-6 font-semibold text-accent-ink underline-offset-4 hover:underline">
             Go to your profile
           </Link>
         </>
@@ -53,7 +53,7 @@ export default function VerifyEmailPage() {
           <p className="mt-3 text-base text-muted">
             Log in and use &ldquo;Resend email&rdquo; on your profile to get a fresh link.
           </p>
-          <Link href="/profile" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
+          <Link href="/profile" className="mt-6 font-semibold text-accent-ink underline-offset-4 hover:underline">
             Go to your profile
           </Link>
         </>
@@ -63,7 +63,7 @@ export default function VerifyEmailPage() {
         <>
           <h1 className="text-3xl font-bold leading-tight">This link is incomplete</h1>
           <p className="mt-3 text-base text-muted">Open the link from your email again, exactly as it was sent.</p>
-          <Link href="/profile" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
+          <Link href="/profile" className="mt-6 font-semibold text-accent-ink underline-offset-4 hover:underline">
             Go to your profile
           </Link>
         </>

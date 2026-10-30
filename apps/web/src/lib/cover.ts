@@ -9,14 +9,14 @@ export interface Cover {
   contours: string[];
 }
 
-/** Dusk and terracotta, forest and gold: the app's palette, as six gradients that all take white text. */
+/** Sunset, ember, ocean and forest: the app's palette at full strength, as six gradients that take white text (over the scrim). */
 export const COVER_GRADIENTS = [
-  'linear-gradient(135deg, #0F3D3A 0%, #1F6F63 55%, #D9962B 120%)',
-  'linear-gradient(150deg, #3D1F1D 0%, #A73728 55%, #DF643F 110%)',
-  'linear-gradient(135deg, #7A2E1F 0%, #C2573F 55%, #F0A53B 120%)',
-  'linear-gradient(160deg, #0A2A2E 0%, #14595A 60%, #5F9C86 120%)',
-  'linear-gradient(140deg, #2A1B1A 0%, #8C3B2A 50%, #E0745E 115%)',
-  'linear-gradient(135deg, #10312F 0%, #3D1F1D 55%, #C2573F 115%)',
+  'linear-gradient(135deg, #0B4B45 0%, #0F9D8A 55%, #FFB41F 125%)',
+  'linear-gradient(150deg, #5B1030 0%, #C2185B 50%, #FF7A45 115%)',
+  'linear-gradient(135deg, #8A2406 0%, #E0481F 55%, #FFB41F 120%)',
+  'linear-gradient(160deg, #0A3A5C 0%, #0E7490 55%, #3DD6C1 125%)',
+  'linear-gradient(140deg, #3A1208 0%, #B83A1B 50%, #FF8A5C 115%)',
+  'linear-gradient(135deg, #064E3B 0%, #15803D 55%, #E9B824 120%)',
 ] as const;
 
 /** FNV-1a: a small, stable string hash. */

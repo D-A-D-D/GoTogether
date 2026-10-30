@@ -138,7 +138,7 @@ export default function DiscoverTripsPage() {
             <IconSliders size={20} />
             <span className="hidden sm:inline">Filters</span>
             {activeFilters > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-gold px-1 text-[0.85rem] font-bold text-[#10312F]">
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-gold px-1 text-[0.85rem] font-bold text-on-gold">
                 {activeFilters}
               </span>
             )}
