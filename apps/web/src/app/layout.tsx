@@ -1,19 +1,22 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Bricolage_Grotesque, Instrument_Sans } from "next/font/google";
 import { RegisterServiceWorker } from "@/components/register-service-worker";
-import { SiteFooter } from "@/components/site-footer";
-import { SiteHeader } from "@/components/site-header";
+import { AppShell } from "@/components/app-shell";
 import { AuthProvider } from "@/lib/auth-context";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Headings in a grotesque with some personality; body in a plain, open sans that stays readable at
+// 17px for anyone. Two faces, used consistently - not a font per component.
+const display = Bricolage_Grotesque({
+  variable: "--font-display",
   subsets: ["latin"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const body = Instrument_Sans({
+  variable: "--font-body",
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -29,23 +32,22 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1F6F6B",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F2E6D6" },
+    { media: "(prefers-color-scheme: dark)", color: "#0A1B1A" },
+  ],
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">
+    <html lang="en" className={`${display.variable} ${body.variable} h-full antialiased`}>
+      <body className="min-h-full">
         <RegisterServiceWorker />
         <AuthProvider>
-          <SiteHeader />
-          {children}
-          <SiteFooter />
+          <AppShell>{children}</AppShell>
         </AuthProvider>
       </body>
     </html>

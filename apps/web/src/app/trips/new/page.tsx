@@ -1,19 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireAuth } from '@/lib/use-require-auth';
-import { createTrip, getTags, type Tag } from '@/lib/api';
+import { createTrip, getTags } from '@/lib/api';
+import { invalidateQueries, useQuery } from '@/lib/query';
 import { TripForm, type TripFormValues } from '@/components/trip-form';
 
 export default function NewTripPage() {
   const status = useRequireAuth();
   const router = useRouter();
 
-  const [tags, setTags] = useState<Tag[]>([]);
-  useEffect(() => {
-    if (status === 'authenticated') getTags().then(setTags).catch(() => setTags([]));
-  }, [status]);
+  // The tag list barely ever changes: kept for ten minutes, and usually already there.
+  const { data: tags = [] } = useQuery('tags', getTags, { staleMs: 600_000, enabled: status === 'authenticated' });
 
   async function handleSubmit(values: TripFormValues) {
     const trip = await createTrip({
@@ -30,17 +28,16 @@ export default function NewTripPage() {
       includeTagIds: values.includeTagIds.length ? values.includeTagIds : undefined,
       excludeTagIds: values.excludeTagIds.length ? values.excludeTagIds : undefined,
     });
+    invalidateQueries('trips:mine', 'discover:');
     router.push(`/trips/${trip.id}`);
   }
 
   if (status !== 'authenticated') return null;
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
-      <h1 className="text-2xl font-semibold tracking-tight">Host a trip</h1>
-      <p className="mt-1 text-sm text-foreground/60">
-        Set the essentials — you can always share more in the group chat once people join.
-      </p>
+    <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-10 pt-5">
+      <h1 className="sr-only">Host a trip</h1>
+      <p className="text-lg text-muted">Set the essentials. You can always share more in the group chat once people join.</p>
 
       <TripForm
         tags={tags}

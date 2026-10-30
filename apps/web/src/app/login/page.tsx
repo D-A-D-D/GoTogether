@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { AuthLayout } from '@/components/auth-layout';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -23,7 +24,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      router.push('/profile');
+      router.push('/trips/discover');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
     } finally {
@@ -32,9 +33,9 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
-      <p className="mt-2 text-sm text-foreground/70">Log in to see your trips and messages.</p>
+    <AuthLayout>
+      <h1 className="text-3xl font-bold leading-tight">Welcome back</h1>
+      <p className="mt-2 text-base text-muted">Log in to see your trips and messages.</p>
 
       <form method="post" onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
@@ -61,7 +62,7 @@ export default function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <Link href="/forgot-password" className="self-end text-xs text-foreground/60 hover:text-foreground">
+          <Link href="/forgot-password" className="self-end text-[0.85rem] text-muted hover:text-foreground">
             Forgot your password?
           </Link>
         </div>
@@ -73,12 +74,12 @@ export default function LoginPage() {
         </PrimaryButton>
       </form>
 
-      <p className="mt-6 text-center text-sm text-foreground/70">
+      <p className="mt-6 text-center text-[0.95rem] text-muted">
         New to GoTogether?{' '}
         <Link href="/register" className="text-accent hover:underline">
           Create an account
         </Link>
       </p>
-    </main>
+    </AuthLayout>
   );
 }

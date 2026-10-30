@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { AuthLayout } from '@/components/auth-layout';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -33,9 +34,9 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
-      <p className="mt-2 text-sm text-foreground/70">
+    <AuthLayout>
+      <h1 className="text-3xl font-bold leading-tight">Create your account</h1>
+      <p className="mt-2 text-base text-muted">
         Start at trust score 50 — it builds as you complete trips and get reviewed.
       </p>
 
@@ -86,7 +87,7 @@ export default function RegisterPage() {
         </PrimaryButton>
       </form>
 
-      <p className="mt-4 text-center text-xs text-foreground/60">
+      <p className="mt-4 text-center text-[0.85rem] text-muted">
         By signing up you agree to the{' '}
         <Link href="/terms" className="underline">
           Terms
@@ -98,12 +99,12 @@ export default function RegisterPage() {
         .
       </p>
 
-      <p className="mt-6 text-center text-sm text-foreground/70">
+      <p className="mt-6 text-center text-[0.95rem] text-muted">
         Already have an account?{' '}
         <Link href="/login" className="text-accent hover:underline">
           Log in
         </Link>
       </p>
-    </main>
+    </AuthLayout>
   );
 }

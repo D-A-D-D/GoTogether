@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import * as api from '@/lib/api';
 import type { PublicUser } from '@/lib/api';
 import { detachPushForLogout, syncPushForUser } from '@/lib/push';
+import { queryCache } from '@/lib/query';
 
 type Status = 'loading' | 'authenticated' | 'unauthenticated';
 
@@ -34,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     api.onSessionExpired(() => {
+      queryCache.clear();
       setUser(null);
       setStatus('unauthenticated');
     });
@@ -57,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const { user: loggedInUser, accessToken } = await api.login(email, password);
+    queryCache.clear(); // nothing seen by anyone before may show for this person
     api.setAccessToken(accessToken);
     setUser(loggedInUser);
     setStatus('authenticated');
@@ -64,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(async (email: string, password: string, name: string) => {
     const { user: newUser, accessToken } = await api.registerAccount(email, password, name);
+    queryCache.clear();
     api.setAccessToken(accessToken);
     setUser(newUser);
     setStatus('authenticated');
@@ -75,11 +79,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // (Who opted in is remembered, so they get them back quietly on return.)
     await detachPushForLogout().catch(() => undefined);
     await api.logout().catch(() => undefined);
+    queryCache.clear(); // the next person on this device must not see this one's trips
     setUser(null);
     setStatus('unauthenticated');
   }, []);
 
   const completeWithToken = useCallback(async (token: string) => {
+    queryCache.clear();
     api.setAccessToken(token);
     const me = await api.getMe();
     setUser(me);

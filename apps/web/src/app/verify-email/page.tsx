@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { AuthLayout } from '@/components/auth-layout';
 import Link from 'next/link';
 import { ApiError, verifyEmailToken } from '@/lib/api';
 import { tokenFromFragment } from '@/lib/token-fragment';
@@ -32,14 +33,14 @@ export default function VerifyEmailPage() {
   }, []);
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-      {stage === 'verifying' && <p className="text-sm text-foreground/60">Confirming your email…</p>}
+    <AuthLayout>
+      {stage === 'verifying' && <p className="text-[0.95rem] text-muted">Confirming your email…</p>}
 
       {stage === 'done' && (
         <>
-          <h1 className="text-2xl font-semibold tracking-tight">Email confirmed</h1>
-          <p className="mt-3 text-sm text-foreground/70">Thanks — your email address is verified.</p>
-          <Link href="/profile" className="mt-6 text-sm text-accent hover:underline">
+          <h1 className="text-3xl font-bold leading-tight">Email confirmed</h1>
+          <p className="mt-3 text-base text-muted">Thanks — your email address is verified.</p>
+          <Link href="/profile" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
             Go to your profile
           </Link>
         </>
@@ -47,12 +48,12 @@ export default function VerifyEmailPage() {
 
       {stage === 'failed' && (
         <>
-          <h1 className="text-2xl font-semibold tracking-tight">We couldn&apos;t confirm that</h1>
-          <p className="mt-3 text-sm text-foreground/70">{message}</p>
-          <p className="mt-3 text-sm text-foreground/70">
+          <h1 className="text-3xl font-bold leading-tight">We couldn&apos;t confirm that</h1>
+          <p className="mt-3 text-base text-muted">{message}</p>
+          <p className="mt-3 text-base text-muted">
             Log in and use &ldquo;Resend email&rdquo; on your profile to get a fresh link.
           </p>
-          <Link href="/profile" className="mt-6 text-sm text-accent hover:underline">
+          <Link href="/profile" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
             Go to your profile
           </Link>
         </>
@@ -60,13 +61,13 @@ export default function VerifyEmailPage() {
 
       {stage === 'no-link' && (
         <>
-          <h1 className="text-2xl font-semibold tracking-tight">This link is incomplete</h1>
-          <p className="mt-3 text-sm text-foreground/70">Open the link from your email again, exactly as it was sent.</p>
-          <Link href="/profile" className="mt-6 text-sm text-accent hover:underline">
+          <h1 className="text-3xl font-bold leading-tight">This link is incomplete</h1>
+          <p className="mt-3 text-base text-muted">Open the link from your email again, exactly as it was sent.</p>
+          <Link href="/profile" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
             Go to your profile
           </Link>
         </>
       )}
-    </main>
+    </AuthLayout>
   );
 }

@@ -63,8 +63,8 @@ export function AccountSettings() {
 
   return (
     <section className="mt-12">
-      <h2 className="text-lg font-semibold tracking-tight">Your data</h2>
-      <p className="mt-1 text-sm text-foreground/60">
+      <h2 className="text-xl font-bold">Your data</h2>
+      <p className="mt-1 text-[0.95rem] text-muted">
         Download a copy of what GoTogether holds about you, or delete your account.
       </p>
 
@@ -74,7 +74,7 @@ export function AccountSettings() {
             type="button"
             onClick={handleDownload}
             disabled={downloading}
-            className="rounded-full border border-line px-4 py-2 text-sm text-foreground/80 hover:border-accent/50 hover:text-foreground disabled:opacity-50"
+            className="rounded-full border border-line px-4 py-2 text-[0.95rem] text-foreground/80 hover:border-accent/50 hover:text-foreground disabled:opacity-50"
           >
             {downloading ? 'Preparing…' : 'Download my data'}
           </button>
@@ -82,24 +82,24 @@ export function AccountSettings() {
         <ErrorText>{downloadError}</ErrorText>
       </div>
 
-      <div className="mt-6 rounded-xl border border-line bg-surface p-4">
-        <h3 className="text-sm font-medium">Delete my account</h3>
+      <div className="mt-6 rounded-2xl border border-line bg-surface shadow-card p-4">
+        <h3 className="text-[0.95rem] font-medium">Delete my account</h3>
         {!confirming ? (
           <>
-            <p className="mt-1 text-sm text-foreground/60">
+            <p className="mt-1 text-[0.95rem] text-muted">
               This can&apos;t be undone. You&apos;ll be signed out everywhere and can&apos;t sign in again.
             </p>
             <button
               type="button"
               onClick={() => setConfirming(true)}
-              className="mt-3 rounded-full border border-danger/50 px-4 py-2 text-sm text-danger hover:bg-danger/10"
+              className="mt-3 rounded-full border border-danger/50 px-4 py-2 text-[0.95rem] text-danger hover:bg-danger/10"
             >
               Delete my account…
             </button>
           </>
         ) : (
           <form onSubmit={handleDelete} className="mt-1 flex flex-col gap-3">
-            <ul className="list-disc space-y-1 pl-5 text-sm text-foreground/70">
+            <ul className="list-disc space-y-1 pl-5 text-[0.95rem] text-muted">
               <li>Your profile, sign-in, notifications, blocks and trust history are deleted.</li>
               <li>You leave any trip that hasn&apos;t finished, and your pending requests are withdrawn.</li>
               <li>
@@ -129,7 +129,7 @@ export function AccountSettings() {
               <button
                 type="submit"
                 disabled={deleting || !proof.trim()}
-                className="rounded-full border border-danger px-4 py-2 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
+                className="rounded-full border border-danger px-4 py-2 text-[0.95rem] font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
               >
                 {deleting ? 'Deleting…' : 'Permanently delete my account'}
               </button>
@@ -141,7 +141,7 @@ export function AccountSettings() {
                   setDeleteError(null);
                 }}
                 disabled={deleting}
-                className="text-sm text-foreground/60 underline hover:text-foreground disabled:opacity-50"
+                className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent underline-offset-4 hover:underline disabled:opacity-50"
               >
                 Cancel
               </button>

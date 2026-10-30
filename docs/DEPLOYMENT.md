@@ -121,6 +121,8 @@ The development secrets in your local `.env` are too short and are rejected in p
 | `NEXT_PUBLIC_API_URL` | **at build time** | The API's public address, e.g. `https://api.example.com`. It is baked into the build, so changing it means rebuilding. |
 | `NEXT_PUBLIC_AUTH_VIA_WEB` | at build time, optional | `true` when the web app and API are on unrelated domains (free platform subdomains): sign-in then goes through the web app's own address. Needs `NEXT_PUBLIC_API_URL` too. See section 2a. |
 
+The web app's trip screens are static pages made on demand (that is what makes opening a trip instant), so the host must run the Next server - Vercel does, or `next start` - and not a plain static export.
+
 ## 5. The database
 
 - **Region.** Decided 2026-10-29: the first market is India, so create the **production** database in Singapore (`aws-ap-southeast-1`) - Neon's regions page, as read that day, lists no Mumbai region (recheck). Production is a *new, empty* Neon project: the migrations build it from nothing (CI proves exactly that against an empty Postgres), so there is no data to move. The Ohio (`us-east-2`) project stays for development. Run the API in the **same region as the database** (Singapore); a page makes several calls, and each one pays the distance.

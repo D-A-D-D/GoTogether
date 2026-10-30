@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
-import { ApiError, getTags, getTrip, updateTrip, type Tag, type TripDetail } from '@/lib/api';
+import { ApiError, getTags, getTrip, updateTrip, type TripDetail } from '@/lib/api';
+import { invalidateQueries, useQuery } from '@/lib/query';
 import { ErrorText } from '@/components/form-controls';
 import { TripForm, type TripFormValues } from '@/components/trip-form';
+import { Skeleton } from '@/components/ui';
 
 /** Dates arrive as full ISO timestamps; the date inputs want just the day. */
 function dayOf(iso: string): string {
@@ -38,30 +39,14 @@ export default function EditTripPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const tripId = params.id;
+  const signedIn = authStatus === 'authenticated';
 
-  const [trip, setTrip] = useState<TripDetail | null>(null);
-  const [tags, setTags] = useState<Tag[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (authStatus !== 'authenticated') return;
-    let cancelled = false;
-    // Deferred a microtask so setState never happens synchronously within
-    // the effect body (react-hooks/set-state-in-effect).
-    void Promise.resolve().then(async () => {
-      try {
-        const [loadedTrip, allTags] = await Promise.all([getTrip(tripId), getTags()]);
-        if (cancelled) return;
-        setTrip(loadedTrip);
-        setTags(allTags);
-      } catch (err) {
-        if (!cancelled) setLoadError(err instanceof ApiError ? err.message : 'Could not load this trip.');
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [authStatus, tripId]);
+  // staleMs 0: the form copies its starting values once, so it must start from the trip as it is
+  // now, never from a copy remembered a minute ago.
+  const tripQuery = useQuery(`trip:${tripId}`, () => getTrip(tripId), { staleMs: 0, enabled: signedIn });
+  const tagsQuery = useQuery('tags', getTags, { staleMs: 600_000, enabled: signedIn });
+  const trip = tripQuery.data;
+  const tags = tagsQuery.data;
 
   async function handleSubmit(values: TripFormValues) {
     await updateTrip(tripId, {
@@ -79,32 +64,37 @@ export default function EditTripPage() {
       includeTagIds: values.includeTagIds,
       excludeTagIds: values.excludeTagIds,
     });
+    invalidateQueries(`trip:${tripId}`, 'trips:mine', 'discover:');
     router.push(`/trips/${tripId}`);
   }
 
-  if (authStatus !== 'authenticated') return null;
+  if (!signedIn) return null;
 
   const message = (text: string) => (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-start gap-3 px-6 py-12">
-      <Link href={`/trips/${tripId}`} className="text-sm text-foreground/60 hover:text-foreground">
-        &larr; Back to trip
+    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-start gap-3 px-4 py-8">
+      <h1 className="sr-only">Edit trip</h1>
+      <p className="text-lg text-muted">{text}</p>
+      <Link href={`/trips/${tripId}`} className="font-semibold text-accent underline-offset-4 hover:underline">
+        Back to the trip
       </Link>
-      <p className="text-sm text-foreground/70">{text}</p>
     </main>
   );
 
-  if (loadError) {
+  if (tripQuery.error && !trip) {
     return (
-      <main className="flex flex-1 items-center justify-center px-6 py-24">
-        <ErrorText>{loadError}</ErrorText>
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8">
+        <ErrorText>{tripQuery.error instanceof ApiError ? tripQuery.error.message : 'Could not load this trip.'}</ErrorText>
       </main>
     );
   }
 
-  if (!trip || !tags || !user) {
+  // Not the form until this is the current copy of the trip, not a remembered one.
+  if (!trip || !tags || !user || tripQuery.isRefreshing) {
     return (
-      <main className="flex flex-1 items-center justify-center px-6 py-24">
-        <p className="text-sm text-foreground/60">Loading trip…</p>
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-10 pt-5" aria-busy="true" aria-label="Loading trip">
+        <Skeleton className="h-6 w-2/3" />
+        <Skeleton className="mt-5 h-64 w-full !rounded-2xl" />
+        <Skeleton className="mt-4 h-48 w-full !rounded-2xl" />
       </main>
     );
   }
@@ -115,16 +105,13 @@ export default function EditTripPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
-      <Link href={`/trips/${tripId}`} className="text-sm text-foreground/60 hover:text-foreground">
-        &larr; Back to trip
-      </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">Edit trip</h1>
-      <p className="mt-1 text-sm text-foreground/60">
+    <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-10 pt-5">
+      <h1 className="sr-only">Edit trip</h1>
+      <p className="text-lg text-muted">
         {trip.approvedCount > 1
           ? 'People already on this trip are notified if you change the dates, destination or budget. '
           : ''}
-        Capacity can&apos;t go below the {trip.approvedCount} {trip.approvedCount === 1 ? 'person' : 'people'} already
+        Places can&apos;t go below the {trip.approvedCount} {trip.approvedCount === 1 ? 'person' : 'people'} already
         approved.
       </p>
 

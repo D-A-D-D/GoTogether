@@ -70,7 +70,7 @@ export default function AdminPage() {
   if (!isAdmin) {
     return (
       <main className="flex flex-1 items-center justify-center px-6 py-24">
-        <p className="text-sm text-foreground/60">This page is for admins.</p>
+        <p className="text-[0.95rem] text-muted">This page is for admins.</p>
       </main>
     );
   }
@@ -84,7 +84,7 @@ export default function AdminPage() {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
       <h1 className="text-2xl font-semibold tracking-tight">Moderation</h1>
-      <p className="mt-1 text-sm text-foreground/60">
+      <p className="mt-1 text-[0.95rem] text-muted">
         Reports are read by people — nothing here happens automatically. Every decision needs a note and is recorded.
       </p>
 
@@ -96,14 +96,14 @@ export default function AdminPage() {
             aria-selected={tab === t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm transition ${
+            className={`-mb-px border-b-2 px-3 py-2 text-[0.95rem] transition ${
               tab === t.id
                 ? 'border-accent text-foreground'
-                : 'border-transparent text-foreground/60 hover:text-foreground'
+                : 'border-transparent text-muted hover:text-foreground'
             }`}
           >
             {t.label}
-            {counts[t.id] !== null && <span className="ml-1.5 text-xs text-foreground/50">{counts[t.id]}</span>}
+            {counts[t.id] !== null && <span className="ml-1.5 text-[0.85rem] text-muted">{counts[t.id]}</span>}
           </button>
         ))}
       </div>
@@ -114,9 +114,9 @@ export default function AdminPage() {
 
       {tab === 'open' &&
         (open === null ? (
-          !error && <p className="text-sm text-foreground/60">Loading…</p>
+          !error && <p className="text-[0.95rem] text-muted">Loading…</p>
         ) : open.length === 0 ? (
-          <p className="text-sm text-foreground/60">No open reports. Nothing is waiting on you.</p>
+          <p className="text-[0.95rem] text-muted">No open reports. Nothing is waiting on you.</p>
         ) : (
           <ul className="flex flex-col gap-3">
             {open.map((r) => (
@@ -127,9 +127,9 @@ export default function AdminPage() {
 
       {tab === 'resolved' &&
         (resolved === null ? (
-          !error && <p className="text-sm text-foreground/60">Loading…</p>
+          !error && <p className="text-[0.95rem] text-muted">Loading…</p>
         ) : resolved.length === 0 ? (
-          <p className="text-sm text-foreground/60">Nothing resolved yet.</p>
+          <p className="text-[0.95rem] text-muted">Nothing resolved yet.</p>
         ) : (
           <ul className="flex flex-col gap-3">
             {resolved.map((r) => (
@@ -140,7 +140,7 @@ export default function AdminPage() {
 
       {tab === 'restricted' &&
         (restricted === null ? (
-          !error && <p className="text-sm text-foreground/60">Loading…</p>
+          !error && <p className="text-[0.95rem] text-muted">Loading…</p>
         ) : (
           <RestrictedList users={restricted} onChanged={load} />
         ))}

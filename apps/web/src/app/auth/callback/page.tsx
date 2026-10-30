@@ -33,9 +33,9 @@ export default function AuthCallbackPage() {
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-24 text-center">
       {error ? (
-        <p className="text-sm text-danger">{error}</p>
+        <p className="text-[0.95rem] text-danger">{error}</p>
       ) : (
-        <p className="text-sm text-foreground/70">Signing you in…</p>
+        <p className="text-[0.95rem] text-muted">Signing you in…</p>
       )}
     </main>
   );

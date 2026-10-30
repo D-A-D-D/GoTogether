@@ -64,14 +64,14 @@ export function PushSettings() {
 
   return (
     <section className="mt-12">
-      <h2 className="text-lg font-semibold tracking-tight">Notifications</h2>
+      <h2 className="text-xl font-bold">Notifications</h2>
 
-      {status === null && <p className="mt-1 text-sm text-foreground/60">Checking this device…</p>}
+      {status === null && <p className="mt-1 text-[0.95rem] text-muted">Checking this device…</p>}
 
-      {status?.kind === 'unsupported' && <p className="mt-1 text-sm text-foreground/60">{status.reason}</p>}
+      {status?.kind === 'unsupported' && <p className="mt-1 text-[0.95rem] text-muted">{status.reason}</p>}
 
       {status?.kind === 'denied' && (
-        <p className="mt-1 text-sm text-foreground/60">
+        <p className="mt-1 text-[0.95rem] text-muted">
           Notifications are blocked for GoTogether in your browser&apos;s settings. Allow them there, then come back to
           turn them on.
         </p>
@@ -79,7 +79,7 @@ export function PushSettings() {
 
       {(status?.kind === 'off' || status?.kind === 'on') && (
         <>
-          <p className="mt-1 text-sm text-foreground/60">
+          <p className="mt-1 text-[0.95rem] text-muted">
             Hear about join requests, approvals, new chat messages and reviews about you &mdash; even when GoTogether
             isn&apos;t open. This applies to this device only.
           </p>
@@ -90,12 +90,12 @@ export function PushSettings() {
               </PrimaryButton>
             ) : (
               <>
-                <span className="text-sm text-accent">Notifications are on for this device.</span>
+                <span className="text-[0.95rem] text-accent">Notifications are on for this device.</span>
                 <button
                   type="button"
                   onClick={handleDisable}
                   disabled={busy}
-                  className="text-sm text-foreground/60 underline hover:text-foreground disabled:opacity-50"
+                  className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent underline-offset-4 hover:underline disabled:opacity-50"
                 >
                   {busy ? 'Turning off…' : 'Turn off'}
                 </button>

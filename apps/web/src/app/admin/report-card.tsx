@@ -12,8 +12,8 @@ type Action = 'dismiss' | 'resolve' | 'suspend' | 'ban' | null;
 const STATUS_STYLE: Record<AdminReport['status'], string> = {
   OPEN: 'bg-accent-2/10 text-accent-2',
   REVIEWING: 'bg-accent/10 text-accent',
-  ACTIONED: 'bg-foreground/5 text-foreground/60',
-  DISMISSED: 'bg-foreground/5 text-foreground/60',
+  ACTIONED: 'bg-foreground/5 text-muted',
+  DISMISSED: 'bg-foreground/5 text-muted',
 };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -44,25 +44,25 @@ export function ReportCard({ report, onChanged }: { report: AdminReport; onChang
   }
 
   return (
-    <li className="rounded-xl border border-line bg-surface p-4">
+    <li className="rounded-2xl border border-line bg-surface shadow-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-medium">{reasonLabel}</p>
-          <p className="mt-0.5 text-xs text-foreground/50">
+          <p className="mt-0.5 text-[0.85rem] text-muted">
             {dateFormat.format(new Date(report.createdAt))}
             {report.tripTitle && <> &middot; on {report.tripTitle}</>}
           </p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[report.status]}`}>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[0.85rem] font-medium ${STATUS_STYLE[report.status]}`}>
           {report.status.toLowerCase()}
         </span>
       </div>
 
-      <p className="mt-3 text-sm">
+      <p className="mt-3 text-[0.95rem]">
         <span className="font-medium">{report.reporter.name}</span>
-        <span className="text-foreground/50"> (trust {report.reporter.trustScore})</span> reported{' '}
+        <span className="text-muted"> (trust {report.reporter.trustScore})</span> reported{' '}
         <span className="font-medium">{report.reported.name}</span>
-        <span className="text-foreground/50">
+        <span className="text-muted">
           {' '}
           (trust {report.reported.trustScore}
           {alreadyRestricted && <>, {report.reported.accountStatus.toLowerCase()}</>})
@@ -70,19 +70,19 @@ export function ReportCard({ report, onChanged }: { report: AdminReport; onChang
       </p>
 
       {report.details && (
-        <blockquote className="mt-2 border-l-2 border-line pl-3 text-sm text-foreground/80">{report.details}</blockquote>
+        <blockquote className="mt-2 border-l-2 border-line pl-3 text-[0.95rem] text-foreground/80">{report.details}</blockquote>
       )}
 
-      <p className="mt-3 text-xs text-foreground/60">
+      <p className="mt-3 text-[0.85rem] text-muted">
         {plural(open, 'open report', 'open reports')} against them from {plural(people, 'person', 'different people')}
         {' · '}
         blocked by {plural(blocked, 'person', 'people')}
       </p>
 
       {resolved && (
-        <div className="mt-3 rounded-lg bg-background p-3 text-sm">
+        <div className="mt-3 rounded-lg bg-background p-3 text-[0.95rem]">
           <p className="text-foreground/80">{report.resolution}</p>
-          <p className="mt-1 text-xs text-foreground/50">
+          <p className="mt-1 text-[0.85rem] text-muted">
             {report.reviewedBy?.name ?? 'A moderator'}
             {report.reviewedAt && <> &middot; {dateFormat.format(new Date(report.reviewedAt))}</>}
           </p>
@@ -92,13 +92,13 @@ export function ReportCard({ report, onChanged }: { report: AdminReport; onChang
       <ErrorText>{error}</ErrorText>
 
       {!resolved && action === null && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[0.95rem]">
           {report.status === 'OPEN' && (
             <button
               type="button"
               disabled={busy}
               onClick={() => run(() => reviewAdminReport(report.id, { status: 'REVIEWING' }))}
-              className="rounded-full border border-line px-3 py-1.5 text-foreground/70 hover:border-accent/50 hover:text-foreground disabled:opacity-50"
+              className="rounded-full border border-line px-3 py-1.5 text-muted hover:border-accent/50 hover:text-foreground disabled:opacity-50"
             >
               Start review
             </button>
@@ -106,14 +106,14 @@ export function ReportCard({ report, onChanged }: { report: AdminReport; onChang
           <button
             type="button"
             onClick={() => setAction('dismiss')}
-            className="rounded-full border border-line px-3 py-1.5 text-foreground/70 hover:border-accent/50 hover:text-foreground"
+            className="rounded-full border border-line px-3 py-1.5 text-muted hover:border-accent/50 hover:text-foreground"
           >
             Dismiss…
           </button>
           <button
             type="button"
             onClick={() => setAction('resolve')}
-            className="rounded-full border border-line px-3 py-1.5 text-foreground/70 hover:border-accent/50 hover:text-foreground"
+            className="rounded-full border border-line px-3 py-1.5 text-muted hover:border-accent/50 hover:text-foreground"
           >
             Resolve, no account action…
           </button>

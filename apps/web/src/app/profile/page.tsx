@@ -1,10 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
-import { ApiError, getMe, getTags, updateMe, type PublicUser, type Tag } from '@/lib/api';
+import { ApiError, getMe, getTags, updateMe, type Tag } from '@/lib/api';
+import { queryCache, useQuery } from '@/lib/query';
 import { Label, TextInput, TextArea, ErrorText, PrimaryButton } from '@/components/form-controls';
+import { Avatar, Button, Card, Chip, Skeleton } from '@/components/ui';
+import { IconCheck, IconLogout, IconShield } from '@/components/icons';
 import { AccountSettings } from './account-settings';
 import { EmailVerification } from './email-verification';
 import { BlockedPeople } from './blocked-people';
@@ -20,11 +24,14 @@ const CATEGORY_LABELS: Record<Tag['category'], string> = {
 
 export default function ProfilePage() {
   const status = useRequireAuth();
-  const { refreshUser } = useAuth();
+  const { refreshUser, logout } = useAuth();
+  const router = useRouter();
+  const signedIn = status === 'authenticated';
 
-  const [profile, setProfile] = useState<PublicUser | null>(null);
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const meQuery = useQuery('me', getMe, { enabled: signedIn, staleMs: 15_000 });
+  const tagsQuery = useQuery('tags', getTags, { enabled: signedIn, staleMs: 600_000 });
+  const profile = meQuery.data;
+  const tags = useMemo(() => tagsQuery.data ?? [], [tagsQuery.data]);
 
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
@@ -36,20 +43,21 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // The form takes its starting values from the profile once, when it first arrives; after that
+  // it is the person's own typing that counts, not whatever the background refresh brings.
+  const seeded = useRef(false);
   useEffect(() => {
-    if (status !== 'authenticated') return;
-    Promise.all([getMe(), getTags()])
-      .then(([me, allTags]) => {
-        setProfile(me);
-        setTags(allTags);
-        setName(me.name);
-        setBio(me.bio ?? '');
-        setHomeCity(me.homeCity ?? '');
-        setHomeRegion(me.homeRegion ?? '');
-        setSelectedTagIds(new Set((me.preferenceTags ?? []).map((t) => t.id)));
-      })
-      .catch(() => setLoadError('Could not load your profile — try refreshing.'));
-  }, [status]);
+    if (!profile || seeded.current) return;
+    seeded.current = true;
+    // Deferred a microtask so setState never happens synchronously within the effect body.
+    void Promise.resolve().then(() => {
+      setName(profile.name);
+      setBio(profile.bio ?? '');
+      setHomeCity(profile.homeCity ?? '');
+      setHomeRegion(profile.homeRegion ?? '');
+      setSelectedTagIds(new Set((profile.preferenceTags ?? []).map((t) => t.id)));
+    });
+  }, [profile]);
 
   const tagsByCategory = useMemo(() => {
     const groups = new Map<Tag['category'], Tag[]>();
@@ -83,7 +91,9 @@ export default function ProfilePage() {
         homeRegion,
         preferenceTagIds: [...selectedTagIds],
       });
-      setProfile(updated);
+      queryCache.set('me', updated);
+      // Matches depend on these tags, so the discovery lists are out of date now.
+      queryCache.invalidate('discover:');
       await refreshUser();
       setSaved(true);
     } catch (err) {
@@ -93,42 +103,64 @@ export default function ProfilePage() {
     }
   }
 
-  if (status === 'loading' || (status === 'authenticated' && !profile && !loadError)) {
+  async function handleLogout() {
+    await logout();
+    router.push('/');
+  }
+
+  if (!signedIn && status !== 'loading') return null;
+
+  if (meQuery.error && !profile) {
     return (
-      <main className="flex flex-1 items-center justify-center px-6 py-24">
-        <p className="text-sm text-foreground/60">Loading your profile…</p>
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8">
+        <ErrorText>Could not load your profile — try refreshing.</ErrorText>
       </main>
     );
   }
 
-  if (loadError) {
+  if (!profile) {
     return (
-      <main className="flex flex-1 items-center justify-center px-6 py-24">
-        <ErrorText>{loadError}</ErrorText>
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-8 pt-5" aria-busy="true" aria-label="Loading your profile">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-20 w-20 !rounded-full" />
+          <div className="flex-1">
+            <Skeleton className="h-6 w-1/2" />
+            <Skeleton className="mt-2 h-4 w-2/3" />
+          </div>
+        </div>
+        <Skeleton className="mt-6 h-64 w-full !rounded-2xl" />
       </main>
     );
   }
-
-  if (!profile) return null;
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
+    <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-12 pt-5">
+      <h1 className="sr-only">Your profile</h1>
       <EmailVerification />
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Your profile</h1>
-        <div className="text-right">
-          <div className="font-mono text-2xl font-semibold text-accent">{profile.trustScore}</div>
-          <div className="text-xs uppercase tracking-wide text-foreground/50">Trust score</div>
-        </div>
-      </div>
-      <p className="mt-1 text-sm text-foreground/60">
-        {profile.email} &middot; {profile.verificationTier.toLowerCase()} verified
-      </p>
 
-      <div className="mt-8 flex flex-col gap-5">
+      <section className="flex items-center gap-4" aria-label="You">
+        <Avatar name={profile.name} size={84} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-display text-2xl font-bold leading-tight">{profile.name}</p>
+          <p className="truncate text-muted">{profile.email}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Chip tone="gold" className="font-bold">
+              <IconShield size={16} />
+              Trust {Math.round(profile.trustScore)}
+            </Chip>
+            {/* What has actually been confirmed, not the name of the account's tier. */}
+            {profile.emailVerifiedAt && <Chip>Email confirmed</Chip>}
+            {profile.verificationTier === 'PHONE' && <Chip>Phone verified</Chip>}
+            {profile.verificationTier === 'ID' && <Chip>ID verified</Chip>}
+          </div>
+        </div>
+      </section>
+
+      <Card className="mt-6 flex flex-col gap-5 p-5">
+        <h2 className="text-xl font-bold">About you</h2>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="name">Name</Label>
-          <TextInput id="name" value={name} onChange={(e) => setName(e.target.value)} />
+          <TextInput id="name" value={name} onChange={(e) => (setSaved(false), setName(e.target.value))} />
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -139,69 +171,79 @@ export default function ProfilePage() {
             maxLength={500}
             placeholder="A couple of lines about how you like to travel."
             value={bio}
-            onChange={(e) => setBio(e.target.value)}
+            onChange={(e) => (setSaved(false), setBio(e.target.value))}
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="homeCity">Home city</Label>
-            <TextInput id="homeCity" value={homeCity} onChange={(e) => setHomeCity(e.target.value)} />
+            <TextInput id="homeCity" value={homeCity} onChange={(e) => (setSaved(false), setHomeCity(e.target.value))} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="homeRegion">Region / country</Label>
-            <TextInput id="homeRegion" value={homeRegion} onChange={(e) => setHomeRegion(e.target.value)} />
+            <TextInput id="homeRegion" value={homeRegion} onChange={(e) => (setSaved(false), setHomeRegion(e.target.value))} />
           </div>
         </div>
+      </Card>
 
+      <Card className="mt-5 flex flex-col gap-5 p-5">
         <div>
-          <Label>Travel &amp; lifestyle tags</Label>
-          <p className="mt-0.5 text-xs text-foreground/50">
-            These help hosts and the matching engine find trips that fit you.
-          </p>
-          <div className="mt-3 flex flex-col gap-4">
-            {[...tagsByCategory.entries()].map(([category, categoryTags]) => (
-              <div key={category}>
-                <div className="mb-1.5 font-mono text-xs uppercase tracking-wide text-foreground/50">
-                  {CATEGORY_LABELS[category]}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {categoryTags.map((tag) => {
-                    const active = selectedTagIds.has(tag.id);
-                    return (
-                      <button
-                        key={tag.id}
-                        type="button"
-                        onClick={() => toggleTag(tag.id)}
-                        aria-pressed={active}
-                        className={`rounded-full border px-3 py-1 text-sm transition ${
-                          active
-                            ? 'border-accent bg-accent text-background'
-                            : 'border-line text-foreground/70 hover:border-accent/50'
-                        }`}
-                      >
-                        {tag.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
+          <h2 className="text-xl font-bold">How you travel</h2>
+          <p className="mt-1 text-muted">These help hosts and the matching find trips that fit you.</p>
         </div>
+        {[...tagsByCategory.entries()].map(([category, categoryTags]) => (
+          <div key={category}>
+            <p className="mb-2 text-[0.95rem] font-semibold text-muted">{CATEGORY_LABELS[category]}</p>
+            <div className="flex flex-wrap gap-2">
+              {categoryTags.map((tag) => {
+                const active = selectedTagIds.has(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleTag(tag.id)}
+                    aria-pressed={active}
+                    className={`pressable inline-flex min-h-11 items-center gap-1.5 rounded-full border-2 px-4 text-base font-medium transition ${
+                      active ? 'border-accent bg-accent text-on-accent' : 'border-field text-foreground hover:border-accent'
+                    }`}
+                  >
+                    {active && <IconCheck size={18} />}
+                    {tag.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </Card>
 
+      <div className="mt-5">
         <ErrorText>{saveError}</ErrorText>
-        {saved && <p className="text-sm text-accent">Saved.</p>}
-
-        <PrimaryButton type="button" onClick={handleSave} disabled={saving} className="w-fit px-6">
-          {saving ? 'Saving…' : 'Save changes'}
-        </PrimaryButton>
+        <div className="flex items-center gap-4">
+          <PrimaryButton type="button" onClick={handleSave} disabled={saving} className="w-fit">
+            {saving ? 'Saving…' : 'Save changes'}
+          </PrimaryButton>
+          {saved && (
+            <p role="status" className="inline-flex items-center gap-1.5 font-semibold text-accent">
+              <IconCheck size={20} />
+              Saved
+            </p>
+          )}
+        </div>
       </div>
 
       <PushSettings />
       <BlockedPeople />
       <TrustHistory />
       <AccountSettings />
+
+      <div className="mt-10 border-t border-line pt-6">
+        <Button variant="secondary" onClick={handleLogout}>
+          <IconLogout size={20} />
+          Log out
+        </Button>
+      </div>
     </main>
   );
 }

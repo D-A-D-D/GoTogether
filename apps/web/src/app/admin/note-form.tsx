@@ -59,8 +59,8 @@ export function NoteForm({ label, confirmLabel, danger = false, onSubmit, onCanc
           disabled={busy || !note.trim()}
           className={
             danger
-              ? 'rounded-full border border-danger px-4 py-1.5 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-50'
-              : 'rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50'
+              ? 'rounded-full border border-danger px-4 py-1.5 text-[0.95rem] font-medium text-danger hover:bg-danger/10 disabled:opacity-50'
+              : 'rounded-full bg-accent px-4 py-1.5 text-[0.95rem] font-medium text-background hover:opacity-90 disabled:opacity-50'
           }
         >
           {busy ? 'Saving…' : confirmLabel}
@@ -69,7 +69,7 @@ export function NoteForm({ label, confirmLabel, danger = false, onSubmit, onCanc
           type="button"
           onClick={onCancel}
           disabled={busy}
-          className="text-sm text-foreground/60 underline hover:text-foreground"
+          className="inline-flex min-h-11 items-center px-2 text-[0.95rem] font-semibold text-accent underline-offset-4 hover:underline"
         >
           Cancel
         </button>

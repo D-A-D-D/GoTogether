@@ -1,6 +1,6 @@
 // Icon generator — run with: node scripts/generate-icons.mjs
-// Renders the app icon SVG (a plain system sans-serif, since the SVG
-// rasterizer here has no access to web fonts) to the manifest's PNG sizes,
+// Renders the app icon SVG (shapes only - the SVG rasterizer here has no
+// access to web fonts) to the manifest's PNG sizes,
 // the Apple touch icon, and a hand-assembled favicon.ico (PNG-in-ICO,
 // supported since Vista/every modern browser — not worth a dependency
 // for something this simple, especially given how much bit-rotted baggage
@@ -36,12 +36,14 @@ function buildIco(pngBuffers) {
 function svg(size) {
   // Always authored in the same 512-unit space; sharp rasterizes then
   // resizes to `size`, so nothing here needs to scale per-size.
+  // The mark is the app's logo - two stops joined by a dashed route - on the deep forest
+  // colour, kept inside the middle 80% so Android's circular mask never clips it.
   return `<svg width="${size}" height="${size}" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" fill="#1F6F6B"/>
-  <text x="256" y="256" text-anchor="middle" dominant-baseline="central"
-        font-family="Arial, Helvetica, sans-serif" font-weight="bold" font-size="300"
-        fill="#F2F3EE">G</text>
-  <circle cx="366" cy="342" r="22" fill="#B4772B"/>
+  <rect width="512" height="512" fill="#0F3D3A"/>
+  <path d="M146 360C146 232 366 290 366 154" fill="none" stroke="#E0745E" stroke-width="30"
+        stroke-linecap="round" stroke-dasharray="2 68"/>
+  <circle cx="140" cy="372" r="62" fill="#F2E6D6"/>
+  <circle cx="372" cy="140" r="62" fill="none" stroke="#F4B13B" stroke-width="34"/>
 </svg>`;
 }
 

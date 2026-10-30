@@ -1,7 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useRequireAuth } from '@/lib/use-require-auth';
@@ -14,17 +13,17 @@ import {
   listTripMembers,
   settleSplit,
   updateExpense,
-  type Balances,
   type CreateExpenseInput,
-  type Expense,
-  type TripMember,
 } from '@/lib/api';
+import { invalidateQueries, useQuery } from '@/lib/query';
+import { formatMoney } from '@/lib/format';
 import { ErrorText } from '@/components/form-controls';
+import { Avatar, Button, Card, Chip, EmptyState, Skeleton } from '@/components/ui';
+import { IconPlus } from '@/components/icons';
 import { ExpenseForm } from './expense-form';
 import { formMembers } from './expense-split';
 
-const amountFormat = new Intl.NumberFormat('en');
-const dateFormat = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' });
+const dateFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
 
 export default function TripExpensesPage() {
   const authStatus = useRequireAuth();
@@ -32,45 +31,32 @@ export default function TripExpensesPage() {
   const params = useParams<{ id: string }>();
   const tripId = params.id;
 
-  const [members, setMembers] = useState<TripMember[] | null>(null);
-  const [expenses, setExpenses] = useState<Expense[] | null>(null);
-  const [balances, setBalances] = useState<Balances | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // The three come together: balances are computed from the same expenses the list shows.
+  const key = `trip:${tripId}:expenses`;
+  const { data, error: loadError, refetch } = useQuery(
+    key,
+    async () => {
+      const [members, expenses, balances] = await Promise.all([listTripMembers(tripId), listExpenses(tripId), getBalances(tripId)]);
+      return { members, expenses, balances };
+    },
+    { enabled: authStatus === 'authenticated', staleMs: 10_000 },
+  );
+
+  const [adding, setAdding] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [settlingId, setSettlingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [loadedMembers, loadedExpenses, loadedBalances] = await Promise.all([
-        listTripMembers(tripId),
-        listExpenses(tripId),
-        getBalances(tripId),
-      ]);
-      setMembers(loadedMembers);
-      setExpenses(loadedExpenses);
-      setBalances(loadedBalances);
-      setLoadError(null);
-    } catch (err) {
-      setLoadError(
-        err instanceof ApiError && err.status === 403
-          ? "Only approved members of this trip can see its expenses."
-          : 'Could not load expenses.',
-      );
-    }
-  }, [tripId]);
-
-  useEffect(() => {
-    if (authStatus !== 'authenticated') return;
-    // Deferred a microtask so setState inside load() never happens
-    // synchronously within the effect body (react-hooks/set-state-in-effect).
-    void Promise.resolve().then(() => load());
-  }, [authStatus, load]);
+  async function load() {
+    invalidateQueries(key);
+    await refetch();
+  }
 
   async function handleCreate(input: CreateExpenseInput) {
     await createExpense(tripId, input);
+    setAdding(false);
     await load();
   }
 
@@ -112,58 +98,62 @@ export default function TripExpensesPage() {
   if (authStatus !== 'authenticated' || !user) return null;
 
   // A failed reload after the first successful load shouldn't blank the page.
-  if (loadError && !balances) {
+  if (loadError && !data) {
     return (
-      <main className="flex flex-1 items-center justify-center px-6 py-24">
-        <ErrorText>{loadError}</ErrorText>
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8">
+        <ErrorText>
+          {loadError instanceof ApiError && loadError.status === 403
+            ? 'Only approved members of this trip can see its expenses.'
+            : 'Could not load expenses.'}
+        </ErrorText>
       </main>
     );
   }
 
-  if (!members || !expenses || !balances) {
+  if (!data) {
     return (
-      <main className="flex flex-1 items-center justify-center px-6 py-24">
-        <p className="text-sm text-foreground/60">Loading expenses…</p>
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-8 pt-5" aria-busy="true" aria-label="Loading expenses">
+        <Skeleton className="h-40 w-full !rounded-3xl" />
+        <Skeleton className="mt-4 h-14 w-full !rounded-full" />
+        <Skeleton className="mt-6 h-28 w-full !rounded-2xl" />
+        <Skeleton className="mt-3 h-28 w-full !rounded-2xl" />
       </main>
     );
   }
 
+  const { members, expenses, balances } = data;
   const meId = user.id;
   const who = (person: { id: string; name: string }) => (person.id === meId ? 'You' : person.name);
+  const net = balances.totalOwedToYou - balances.totalYouOwe;
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
-      <Link href={`/trips/${tripId}`} className="text-sm text-foreground/60 hover:text-foreground">
-        &larr; Back to trip
-      </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">Expenses</h1>
+    <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-10 pt-5">
+      <h1 className="sr-only">Expenses</h1>
 
-      {loadError && (
-        <div className="mt-4">
-          <ErrorText>{loadError}</ErrorText>
-        </div>
-      )}
+      {loadError && <ErrorText>{loadError.message || 'Could not refresh expenses.'}</ErrorText>}
 
-      <section className="mt-6 rounded-xl border border-line bg-surface p-4">
-        <h2 className="text-sm font-medium text-foreground/80">Your balances</h2>
+      <section aria-labelledby="balance-heading" className="rounded-3xl bg-forest p-5 text-[#F2E6D6] shadow-card">
+        <h2 id="balance-heading" className="text-[0.95rem] font-semibold text-[#F2E6D6]/75">
+          Where you stand
+        </h2>
         {balances.balances.length === 0 ? (
-          <p className="mt-2 text-sm text-foreground/60">You&apos;re all settled up.</p>
+          <p className="mt-1 font-display text-3xl font-bold">All settled up</p>
         ) : (
           <>
-            <div className="mt-2 flex gap-6 text-sm">
-              <span>
-                You&apos;re owed <strong className="text-accent">{amountFormat.format(balances.totalOwedToYou)}</strong>
-              </span>
-              <span>
-                You owe <strong className="text-danger">{amountFormat.format(balances.totalYouOwe)}</strong>
-              </span>
-            </div>
-            <ul className="mt-3 flex flex-col gap-1 text-sm text-foreground/80">
+            <p className="mt-1 font-display text-4xl font-extrabold leading-tight">
+              {net >= 0 ? `You’re owed ${formatMoney(net)}` : `You owe ${formatMoney(-net)}`}
+            </p>
+            <p className="mt-1 text-[0.95rem] text-[#F2E6D6]/75">
+              {formatMoney(balances.totalOwedToYou)} coming to you · {formatMoney(balances.totalYouOwe)} to pay
+            </p>
+            <ul className="mt-4 flex flex-col gap-2.5 border-t border-white/15 pt-4">
               {balances.balances.map((b) => (
-                <li key={b.counterpart.id}>
-                  {b.netAmount > 0
-                    ? `${b.counterpart.name} owes you ${amountFormat.format(b.netAmount)}`
-                    : `You owe ${b.counterpart.name} ${amountFormat.format(-b.netAmount)}`}
+                <li key={b.counterpart.id} className="flex items-center gap-3">
+                  <Avatar name={b.counterpart.name} size={36} />
+                  <span className="min-w-0 flex-1 truncate">
+                    {b.netAmount > 0 ? `${b.counterpart.name} owes you` : `You owe ${b.counterpart.name}`}
+                  </span>
+                  <span className="font-bold tabular-nums">{formatMoney(Math.abs(b.netAmount))}</span>
                 </li>
               ))}
             </ul>
@@ -171,134 +161,151 @@ export default function TripExpensesPage() {
         )}
       </section>
 
-      <section className="mt-6">
-        <h2 className="text-lg font-semibold tracking-tight">Add an expense</h2>
-        <div className="mt-3 rounded-xl border border-line bg-surface p-4">
-          <ExpenseForm members={members} meId={meId} onSubmit={handleCreate} />
-        </div>
-      </section>
+      <div className="mt-5">
+        {adding ? (
+          <Card className="pop-in p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xl font-bold">Add an expense</h2>
+              <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>
+                Close
+              </Button>
+            </div>
+            <ExpenseForm members={members} meId={meId} onSubmit={handleCreate} />
+          </Card>
+        ) : (
+          <Button size="lg" block onClick={() => setAdding(true)}>
+            <IconPlus size={22} />
+            Add an expense
+          </Button>
+        )}
+      </div>
 
-      <section className="mt-8">
-        <h2 className="text-lg font-semibold tracking-tight">History</h2>
+      <section className="mt-8" aria-labelledby="history-heading">
+        <h2 id="history-heading" className="text-xl font-bold">
+          History
+          {expenses.length > 0 && <span className="ml-2 text-base font-medium text-muted">{expenses.length}</span>}
+        </h2>
         <ErrorText>{actionError}</ErrorText>
         {expenses.length === 0 ? (
-          <p className="mt-3 text-sm text-foreground/60">No expenses yet. Add the first one above.</p>
+          <div className="mt-3">
+            <EmptyState title="No expenses yet">Add the first one when someone pays for something. Everyone&apos;s share is worked out for you.</EmptyState>
+          </div>
         ) : (
           <ul className="mt-3 flex flex-col gap-3">
             {expenses.map((expense) => (
-              <li key={expense.id} className="rounded-xl border border-line bg-surface p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium">{expense.description}</p>
-                    <p className="mt-0.5 text-xs text-foreground/50">
-                      Paid by {who(expense.paidBy)} &middot; {dateFormat.format(new Date(expense.createdAt))}
-                      {expense.category ? ` · ${expense.category}` : ''}
-                    </p>
+              <li key={expense.id}>
+                <Card className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-lg font-semibold leading-snug">{expense.description}</p>
+                      <p className="mt-0.5 text-[0.9rem] text-muted">
+                        Paid by {who(expense.paidBy)} &middot; {dateFormat.format(new Date(expense.createdAt))}
+                        {expense.category ? ` · ${expense.category}` : ''}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-xl font-bold tabular-nums">{formatMoney(expense.amount)}</p>
                   </div>
-                  <p className="shrink-0 font-semibold tabular-nums">{amountFormat.format(expense.amount)}</p>
-                </div>
-                {editingId === expense.id ? (
-                  <div className="mt-3 border-t border-line pt-3">
-                    <ExpenseForm
-                      idPrefix={`edit-${expense.id}`}
-                      members={formMembers(expense, members)}
-                      meId={meId}
-                      initial={expense}
-                      onSubmit={(input) => handleUpdate(expense.id, input)}
-                      onCancel={() => setEditingId(null)}
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <ul className="mt-3 flex flex-col gap-1.5 border-t border-line pt-3">
-                      {expense.splits.map((split) => {
-                        const isPayersOwnShare = split.userId === expense.paidById;
-                        const involvesMe = split.userId === meId || expense.paidById === meId;
-                        return (
-                          <li key={split.id} className="flex items-center justify-between gap-3 text-sm">
-                            <span className="text-foreground/80">{who(split.user)}</span>
-                            <span className="flex items-center gap-3">
-                              <span className="tabular-nums">{amountFormat.format(split.amount)}</span>
-                              {isPayersOwnShare ? (
-                                <span className="text-xs text-foreground/40">paid</span>
-                              ) : split.settled ? (
-                                <span className="text-xs text-accent">settled</span>
-                              ) : involvesMe ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSettle(expense.id, split.id)}
-                                  disabled={settlingId !== null}
-                                  className="rounded-full border border-line px-3 py-1 text-xs text-foreground/70 hover:border-accent/50 hover:text-foreground disabled:opacity-50"
-                                >
-                                  {settlingId === split.id ? 'Saving…' : 'Mark paid'}
-                                </button>
-                              ) : (
-                                <span className="text-xs text-foreground/40">owes</span>
-                              )}
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                    {expense.canChange ? (
-                      confirmingDeleteId === expense.id ? (
-                        <div className="mt-3 border-t border-line pt-3 text-sm">
-                          <p className="text-foreground/80">
-                            Delete this expense? Everyone involved will be told, and it comes off the balances.
-                          </p>
-                          <div className="mt-2 flex items-center gap-4">
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(expense.id)}
-                              disabled={deletingId !== null}
-                              className="rounded-full border border-danger px-4 py-1.5 font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
-                            >
-                              {deletingId === expense.id ? 'Deleting…' : 'Yes, delete it'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmingDeleteId(null)}
-                              disabled={deletingId !== null}
-                              className="text-foreground/60 underline hover:text-foreground disabled:opacity-50"
-                            >
-                              Keep it
-                            </button>
+
+                  {editingId === expense.id ? (
+                    <div className="mt-3 border-t border-line pt-3">
+                      <ExpenseForm
+                        idPrefix={`edit-${expense.id}`}
+                        members={formMembers(expense, members)}
+                        meId={meId}
+                        initial={expense}
+                        onSubmit={(input) => handleUpdate(expense.id, input)}
+                        onCancel={() => setEditingId(null)}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <ul className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+                        {expense.splits.map((split) => {
+                          const isPayersOwnShare = split.userId === expense.paidById;
+                          const involvesMe = split.userId === meId || expense.paidById === meId;
+                          return (
+                            <li key={split.id} className="flex items-center justify-between gap-3">
+                              <span className="flex min-w-0 items-center gap-2.5">
+                                <Avatar name={split.user.name} size={28} />
+                                <span className="truncate">{who(split.user)}</span>
+                              </span>
+                              <span className="flex shrink-0 items-center gap-3">
+                                <span className="font-semibold tabular-nums">{formatMoney(split.amount)}</span>
+                                {isPayersOwnShare ? (
+                                  <Chip className="!py-0.5 !text-[0.85rem]">paid</Chip>
+                                ) : split.settled ? (
+                                  <Chip tone="accent" className="!py-0.5 !text-[0.85rem]">
+                                    settled
+                                  </Chip>
+                                ) : involvesMe ? (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => handleSettle(expense.id, split.id)}
+                                    disabled={settlingId !== null}
+                                  >
+                                    {settlingId === split.id ? 'Saving…' : 'Mark paid'}
+                                  </Button>
+                                ) : (
+                                  <Chip tone="gold" className="!py-0.5 !text-[0.85rem]">
+                                    owes
+                                  </Chip>
+                                )}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+
+                      {expense.canChange ? (
+                        confirmingDeleteId === expense.id ? (
+                          <div className="mt-3 border-t border-line pt-3">
+                            <p>Delete this expense? Everyone involved will be told, and it comes off the balances.</p>
+                            <div className="mt-3 flex items-center gap-3">
+                              <Button variant="danger" onClick={() => handleDelete(expense.id)} disabled={deletingId !== null}>
+                                {deletingId === expense.id ? 'Deleting…' : 'Yes, delete it'}
+                              </Button>
+                              <Button variant="ghost" onClick={() => setConfirmingDeleteId(null)} disabled={deletingId !== null}>
+                                Keep it
+                              </Button>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="mt-3 flex items-center gap-1 border-t border-line pt-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setActionError(null);
+                                setConfirmingDeleteId(null);
+                                setEditingId(expense.id);
+                              }}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="!text-danger"
+                              onClick={() => {
+                                setActionError(null);
+                                setConfirmingDeleteId(expense.id);
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        )
                       ) : (
-                        <div className="mt-3 flex items-center gap-4 border-t border-line pt-3 text-sm">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActionError(null);
-                              setConfirmingDeleteId(null);
-                              setEditingId(expense.id);
-                            }}
-                            className="text-foreground/60 underline hover:text-foreground"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActionError(null);
-                              setConfirmingDeleteId(expense.id);
-                            }}
-                            className="text-foreground/60 underline hover:text-danger"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )
-                    ) : (
-                      (expense.createdById === meId || expense.paidById === meId) && (
-                        <p className="mt-3 border-t border-line pt-3 text-xs text-foreground/50">
-                          Part of this has been marked paid, so it can&apos;t be changed. Add a correcting expense instead.
-                        </p>
-                      )
-                    )}
-                  </>
-                )}
+                        (expense.createdById === meId || expense.paidById === meId) && (
+                          <p className="mt-3 border-t border-line pt-3 text-[0.9rem] text-muted">
+                            Part of this has been marked paid, so it can&apos;t be changed. Add a correcting expense instead.
+                          </p>
+                        )
+                      )}
+                    </>
+                  )}
+                </Card>
               </li>
             ))}
           </ul>

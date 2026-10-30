@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { AuthLayout } from '@/components/auth-layout';
 import Link from 'next/link';
 import { ApiError, requestPasswordReset } from '@/lib/api';
 import { useHydrated } from '@/lib/use-hydrated';
@@ -29,26 +30,26 @@ export default function ForgotPasswordPage() {
 
   if (sentTo) {
     return (
-      <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-        <h1 className="text-2xl font-semibold tracking-tight">Check your email</h1>
-        <p className="mt-3 text-sm text-foreground/70">
+      <AuthLayout>
+        <h1 className="text-3xl font-bold leading-tight">Check your email</h1>
+        <p className="mt-3 text-base text-muted">
           If there&apos;s an account for <strong className="text-foreground">{sentTo}</strong>, we&apos;ve sent a link to
           choose a new password. It works once and expires in an hour.
         </p>
-        <p className="mt-3 text-sm text-foreground/70">
+        <p className="mt-3 text-base text-muted">
           Nothing arrived? Look in your spam folder, and check the address is spelled the way you signed up.
         </p>
-        <Link href="/login" className="mt-6 text-sm text-accent hover:underline">
+        <Link href="/login" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
           Back to log in
         </Link>
-      </main>
+      </AuthLayout>
     );
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Forgot your password?</h1>
-      <p className="mt-2 text-sm text-foreground/70">Enter your email and we&apos;ll send you a link to choose a new one.</p>
+    <AuthLayout>
+      <h1 className="text-3xl font-bold leading-tight">Forgot your password?</h1>
+      <p className="mt-2 text-base text-muted">Enter your email and we&apos;ll send you a link to choose a new one.</p>
 
       <form method="post" onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
@@ -71,12 +72,12 @@ export default function ForgotPasswordPage() {
         </PrimaryButton>
       </form>
 
-      <p className="mt-6 text-center text-sm text-foreground/70">
+      <p className="mt-6 text-center text-[0.95rem] text-muted">
         Remembered it?{' '}
         <Link href="/login" className="text-accent hover:underline">
           Log in
         </Link>
       </p>
-    </main>
+    </AuthLayout>
   );
 }

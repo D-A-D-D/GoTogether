@@ -3,6 +3,7 @@
 import { useId, useState, type FormEvent } from 'react';
 import { ApiError, type CreateReviewInput, type ReviewTarget } from '@/lib/api';
 import { ErrorText, Label, PrimaryButton, TextArea } from '@/components/form-controls';
+import { Button } from '@/components/ui';
 
 const DIMENSIONS = [
   { key: 'reliability', label: 'Reliability', hint: 'Showed up and kept to the plan' },
@@ -67,14 +68,14 @@ export function ReviewForm({ target, onSubmit, onCancel }: ReviewFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <p className="text-xs text-foreground/50">Rate each from 1 (poor) to 5 (excellent).</p>
+      <p className="text-[0.95rem] text-muted">Rate each from 1 (poor) to 5 (excellent).</p>
 
       {DIMENSIONS.map((d) => (
         <fieldset key={d.key}>
-          <legend className="text-sm font-medium text-foreground/80">
-            {d.label} <span className="font-normal text-foreground/50">&middot; {d.hint}</span>
+          <legend className="text-base font-semibold">
+            {d.label} <span className="font-normal text-muted">&middot; {d.hint}</span>
           </legend>
-          <div className="mt-1.5 flex gap-2">
+          <div className="mt-2 flex gap-2.5">
             {[1, 2, 3, 4, 5].map((n) => (
               <label key={n} className="cursor-pointer">
                 <input
@@ -85,7 +86,7 @@ export function ReviewForm({ target, onSubmit, onCancel }: ReviewFormProps) {
                   onChange={() => setRatings((prev) => ({ ...prev, [d.key]: n }))}
                   className="peer sr-only"
                 />
-                <span className="flex h-9 w-9 items-center justify-center rounded-full border border-line text-sm text-foreground/70 transition hover:border-accent/50 peer-checked:border-accent peer-checked:bg-accent peer-checked:text-background peer-focus-visible:ring-2 peer-focus-visible:ring-accent/50">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-field text-lg font-bold text-foreground transition hover:border-accent peer-checked:border-accent peer-checked:bg-accent peer-checked:text-on-accent peer-focus-visible:ring-4 peer-focus-visible:ring-gold">
                   {n}
                 </span>
               </label>
@@ -106,25 +107,20 @@ export function ReviewForm({ target, onSubmit, onCancel }: ReviewFormProps) {
         />
       </div>
 
-      <p className="text-xs text-foreground/50">
+      <p className="text-[0.85rem] text-muted">
         {target.name} will see your name, ratings and comment &mdash; once you&apos;ve both reviewed each other, or
         after 14 days.
       </p>
 
       <ErrorText>{error}</ErrorText>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <PrimaryButton type="submit" disabled={!complete || submitting} className="w-fit px-6">
           {submitting ? 'Submitting…' : 'Submit review'}
         </PrimaryButton>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={submitting}
-          className="text-sm text-foreground/60 underline hover:text-foreground"
-        >
+        <Button variant="ghost" onClick={onCancel} disabled={submitting}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );

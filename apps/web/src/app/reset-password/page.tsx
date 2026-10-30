@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { AuthLayout } from '@/components/auth-layout';
 import Link from 'next/link';
 import { ApiError, resetPassword } from '@/lib/api';
 import { tokenFromFragment } from '@/lib/token-fragment';
@@ -71,35 +72,35 @@ export default function ResetPasswordPage() {
 
   if (stage === 'no-link') {
     return (
-      <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-        <h1 className="text-2xl font-semibold tracking-tight">This link is incomplete</h1>
-        <p className="mt-3 text-sm text-foreground/70">
+      <AuthLayout>
+        <h1 className="text-3xl font-bold leading-tight">This link is incomplete</h1>
+        <p className="mt-3 text-base text-muted">
           Open the link from your email again, exactly as it was sent — or ask for a new one.
         </p>
-        <Link href="/forgot-password" className="mt-6 text-sm text-accent hover:underline">
+        <Link href="/forgot-password" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
           Send me a new link
         </Link>
-      </main>
+      </AuthLayout>
     );
   }
 
   if (stage === 'done') {
     return (
-      <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-        <h1 className="text-2xl font-semibold tracking-tight">Password changed</h1>
-        <p className="mt-3 text-sm text-foreground/70">
+      <AuthLayout>
+        <h1 className="text-3xl font-bold leading-tight">Password changed</h1>
+        <p className="mt-3 text-base text-muted">
           You&apos;ve been signed out everywhere, so log in with your new password.
         </p>
-        <Link href="/login" className="mt-6 text-sm text-accent hover:underline">
+        <Link href="/login" className="mt-6 font-semibold text-accent underline-offset-4 hover:underline">
           Log in
         </Link>
-      </main>
+      </AuthLayout>
     );
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Choose a new password</h1>
+    <AuthLayout>
+      <h1 className="text-3xl font-bold leading-tight">Choose a new password</h1>
 
       <form method="post" onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
@@ -113,7 +114,7 @@ export default function ResetPasswordPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          {tooShort && <p className="text-xs text-foreground/60">At least 8 characters.</p>}
+          {tooShort && <p className="text-[0.85rem] text-muted">At least 8 characters.</p>}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -127,12 +128,12 @@ export default function ResetPasswordPage() {
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
           />
-          {mismatch && <p className="text-xs text-foreground/60">These don&apos;t match yet.</p>}
+          {mismatch && <p className="text-[0.85rem] text-muted">These don&apos;t match yet.</p>}
         </div>
 
         <ErrorText>{error}</ErrorText>
         {linkIsBad && (
-          <Link href="/forgot-password" className="text-sm text-accent hover:underline">
+          <Link href="/forgot-password" className="font-semibold text-accent underline-offset-4 hover:underline">
             Send me a new link
           </Link>
         )}
@@ -141,6 +142,6 @@ export default function ResetPasswordPage() {
           {submitting ? 'Saving…' : 'Change password'}
         </PrimaryButton>
       </form>
-    </main>
+    </AuthLayout>
   );
 }

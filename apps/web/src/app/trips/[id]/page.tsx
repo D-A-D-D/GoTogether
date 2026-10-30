@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -16,23 +16,55 @@ import {
   requestToJoinTrip,
   respondToTripRequest,
   type TripDetail,
-  type TripMember,
-  type TripRequest,
 } from '@/lib/api';
+import { invalidateQueries, queryCache, useQuery } from '@/lib/query';
+import { formatBudget, formatDateRange, plural, tripDays } from '@/lib/format';
 import { Travellers } from './travellers';
-import { ErrorText, PrimaryButton } from '@/components/form-controls';
+import { ErrorText } from '@/components/form-controls';
+import { Avatar, Button, Card, Chip, Skeleton, TripCover } from '@/components/ui';
+import { IconCalendar, IconChat, IconEdit, IconShield, IconStar, IconUsers, IconWallet } from '@/components/icons';
 
 // Mirror the API's rules in apps/api/src/trips/trip-rules.ts, which are the
 // authoritative ones — these only decide what to offer, never what's allowed.
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_APPROVED_MEMBERS_TO_COMPLETE = 2;
 
-const PILL_LINK =
-  'rounded-full border border-line px-4 py-2 text-sm text-foreground/70 hover:border-accent/50 hover:text-foreground';
+const STATUS_CHIP: Record<string, { label: string; tone: 'plain' | 'accent' | 'gold' }> = {
+  OPEN: { label: 'Open', tone: 'gold' },
+  FULL: { label: 'Full', tone: 'plain' },
+  ONGOING: { label: 'Under way', tone: 'accent' },
+  COMPLETED: { label: 'Completed', tone: 'plain' },
+  CANCELLED: { label: 'Cancelled', tone: 'plain' },
+};
 
-function formatDateRange(startIso: string, endIso: string): string {
-  const fmt = new Intl.DateTimeFormat('en', { month: 'long', day: 'numeric', year: 'numeric' });
-  return `${fmt.format(new Date(startIso))} – ${fmt.format(new Date(endIso))}`;
+function Fact({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-foreground">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[0.9rem] text-muted">{label}</p>
+        <div className="font-semibold leading-snug">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+interface Tile {
+  href: string;
+  icon: ReactNode;
+  label: string;
+}
+
+function ActionTile({ href, icon, label }: Tile) {
+  return (
+    <Link
+      href={href}
+      className="pressable flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-2xl border border-line bg-surface px-2 py-3 text-center text-[0.95rem] font-semibold shadow-card"
+    >
+      <span className="text-accent">{icon}</span>
+      {label}
+    </Link>
+  );
 }
 
 export default function TripDetailPage() {
@@ -40,417 +72,329 @@ export default function TripDetailPage() {
   const { user } = useAuth();
   const params = useParams<{ id: string }>();
   const tripId = params.id;
+  const signedIn = authStatus === 'authenticated';
 
-  const [trip, setTrip] = useState<TripDetail | null>(null);
-  const [requests, setRequests] = useState<TripRequest[] | null>(null);
-  const [members, setMembers] = useState<TripMember[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const tripQuery = useQuery(`trip:${tripId}`, () => getTrip(tripId), { enabled: signedIn });
+  const trip = tripQuery.data;
+
+  const isHost = !!trip && !!user && trip.hostId === user.id;
+  const isApprovedMember = isHost || trip?.myMembership?.status === 'APPROVED';
+
+  // These depend on who the person is on this trip, so they wait for the trip - but they then run
+  // side by side rather than one after another, and a failed travellers list never breaks the page.
+  const requestsQuery = useQuery(`trip:${tripId}:requests`, () => listTripRequests(tripId), { enabled: signedIn && isHost });
+  const membersQuery = useQuery(`trip:${tripId}:members`, () => listTripMembers(tripId), { enabled: signedIn && isApprovedMember });
+  const requests = requestsQuery.data;
+  const members = membersQuery.data;
+
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmingComplete, setConfirmingComplete] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
-  // Captured when the trip loads rather than read during render, so render
-  // stays pure (react-hooks/purity). Only used to decide whether to offer
-  // "mark complete"; the server enforces the end-date rule itself.
-  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  // Fixed when the page opens, so render stays pure. Only decides whether to offer "mark complete";
+  // the server enforces the end-date rule itself.
+  const [openedAt] = useState(() => Date.now());
 
-  const isHost = trip !== null && user !== null && trip.hostId === user.id;
+  /** Brings this trip's screens and the lists that show it up to date after a change. */
+  async function reload() {
+    invalidateQueries(`trip:${tripId}`, 'trips:mine', 'discover:');
+    await Promise.all([tripQuery.refetch(), requestsQuery.refetch(), membersQuery.refetch()]);
+  }
 
-  const load = useCallback(async () => {
+  async function run(action: () => Promise<unknown>, fallback: string, after?: () => void) {
+    setActionError(null);
+    setBusy(true);
     try {
-      const t = await getTrip(tripId);
-      setTrip(t);
-      setLoadedAt(Date.now());
-      if (t.hostId === user?.id) {
-        setRequests(await listTripRequests(tripId));
-      }
-      // The travellers list is only for people on the trip (the API refuses anyone
-      // else). It's a nicety, so a failure here must never break the page.
-      if (t.hostId === user?.id || t.myMembership?.status === 'APPROVED') {
-        try {
-          setMembers(await listTripMembers(tripId));
-        } catch {
-          setMembers(null);
-        }
-      }
+      await action();
+      after?.();
+      await reload();
     } catch (err) {
-      setLoadError(err instanceof ApiError ? err.message : 'Could not load this trip.');
+      setActionError(err instanceof ApiError ? err.message : fallback);
+    } finally {
+      setBusy(false);
     }
-  }, [tripId, user]);
+  }
 
-  useEffect(() => {
-    if (authStatus !== 'authenticated') return;
-    // Deferred a microtask so setState inside load() never happens
-    // synchronously within the effect body (react-hooks/set-state-in-effect).
-    void Promise.resolve().then(() => load());
-  }, [authStatus, load]);
-
+  /** Shows the request as sent the instant it is pressed, and takes it back if the server says no. */
   async function handleRequestToJoin() {
+    if (!trip) return;
+    const before = trip;
+    queryCache.set<TripDetail>(`trip:${tripId}`, { ...trip, myMembership: { status: 'REQUESTED', role: 'MEMBER' } });
     setActionError(null);
     setBusy(true);
     try {
       await requestToJoinTrip(tripId);
-      await load();
+      await reload();
     } catch (err) {
+      queryCache.set<TripDetail>(`trip:${tripId}`, before);
       setActionError(err instanceof ApiError ? err.message : 'Could not send the request.');
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleLeave() {
-    setActionError(null);
-    setBusy(true);
-    try {
-      await leaveTrip(tripId);
-      await load();
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Could not do that.');
-    } finally {
-      setBusy(false);
-    }
-  }
+  if (!signedIn) return null;
 
-  async function handleCancel() {
-    setActionError(null);
-    setBusy(true);
-    try {
-      await cancelTrip(tripId);
-      setConfirmingCancel(false);
-      await load();
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Could not cancel the trip.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleComplete() {
-    setActionError(null);
-    setBusy(true);
-    try {
-      await completeTrip(tripId);
-      setConfirmingComplete(false);
-      await load();
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Could not mark the trip complete.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleRespond(membershipId: string, decision: 'APPROVED' | 'REJECTED') {
-    setActionError(null);
-    setBusy(true);
-    try {
-      await respondToTripRequest(tripId, membershipId, decision);
-      await load();
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Could not respond to that request.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (authStatus !== 'authenticated') return null;
-
-  if (loadError) {
+  if (tripQuery.error && !trip) {
     return (
-      <main className="flex flex-1 items-center justify-center px-6 py-24">
-        <ErrorText>{loadError}</ErrorText>
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-10">
+        <ErrorText>{tripQuery.error instanceof ApiError ? tripQuery.error.message : 'Could not load this trip.'}</ErrorText>
       </main>
     );
   }
 
   if (!trip) {
     return (
-      <main className="flex flex-1 items-center justify-center px-6 py-24">
-        <p className="text-sm text-foreground/60">Loading trip…</p>
+      <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-8 pt-4" aria-busy="true" aria-label="Loading trip">
+        <Skeleton className="aspect-[16/10] w-full !rounded-3xl" />
+        <Skeleton className="mt-5 h-7 w-2/3" />
+        <Skeleton className="mt-3 h-24 w-full !rounded-2xl" />
+        <Skeleton className="mt-3 h-16 w-full !rounded-2xl" />
       </main>
     );
   }
 
-  const isApprovedMember = isHost || trip.myMembership?.status === 'APPROVED';
   // The server lets anyone who held an approved membership review, including
   // people who later left, so the link isn't limited to current members.
-  const canReview =
-    trip.status === 'COMPLETED' &&
-    (isApprovedMember || trip.myMembership?.status === 'LEFT');
+  const canReview = trip.status === 'COMPLETED' && (isApprovedMember || trip.myMembership?.status === 'LEFT');
   const canMarkComplete = isHost && (trip.status === 'OPEN' || trip.status === 'FULL' || trip.status === 'ONGOING');
   const isCancelled = trip.status === 'CANCELLED';
   // The server only allows editing and cancelling while the trip is OPEN or FULL.
   const canManage = isHost && (trip.status === 'OPEN' || trip.status === 'FULL');
   // endDate is the last day, inclusive: the trip is over once that whole UTC day has passed.
   const endOfLastDay = (Math.floor(new Date(trip.endDate).getTime() / DAY_MS) + 1) * DAY_MS;
-  const hasEnded = loadedAt !== null && loadedAt >= endOfLastDay;
+  const hasEnded = openedAt >= endOfLastDay;
   const hasEnoughMembers = trip.approvedCount >= MIN_APPROVED_MEMBERS_TO_COMPLETE;
+  const status = STATUS_CHIP[trip.status] ?? { label: trip.status, tone: 'plain' as const };
+  const seatsLeft = Math.max(0, trip.capacity - trip.approvedCount);
+  const canRequest = !isHost && trip.myMembership === null && trip.status === 'OPEN';
+  const tiles: Tile[] = [];
+  if (isApprovedMember) {
+    tiles.push({ href: `/trips/${trip.id}/chat`, icon: <IconChat size={28} />, label: 'Chat' });
+    tiles.push({ href: `/trips/${trip.id}/expenses`, icon: <IconWallet size={28} />, label: 'Expenses' });
+  }
+  if (canReview) tiles.push({ href: `/trips/${trip.id}/reviews`, icon: <IconStar size={28} />, label: 'Reviews' });
+  if (canManage) tiles.push({ href: `/trips/${trip.id}/edit`, icon: <IconEdit size={28} />, label: 'Edit trip' });
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-accent">{trip.status}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{trip.title}</h1>
-          <p className="mt-1 text-foreground/70">{trip.destination}</p>
+    <main className="mx-auto w-full max-w-2xl flex-1 px-4 pb-10 pt-4">
+      <TripCover seed={trip.destination} photoUrl={trip.coverPhotoUrl} className="aspect-[16/10] rounded-3xl sm:aspect-[2/1]">
+        <Chip tone={status.tone} className="absolute left-3 top-3 shadow">
+          {status.label}
+        </Chip>
+        <div className="absolute inset-x-0 bottom-0 p-5">
+          <p className="font-display text-3xl font-bold leading-tight drop-shadow sm:text-4xl">{trip.destination}</p>
+          <p className="mt-1 font-medium text-white/90">
+            {formatDateRange(trip.startDate, trip.endDate)} · {plural(tripDays(trip.startDate, trip.endDate), 'day')}
+          </p>
         </div>
-        {(isApprovedMember || canReview) && (
-          <div className="flex shrink-0 flex-wrap justify-end gap-2">
-            {isApprovedMember && (
-              <>
-                <Link href={`/trips/${trip.id}/expenses`} className={PILL_LINK}>
-                  Expenses
-                </Link>
-                <Link href={`/trips/${trip.id}/chat`} className={PILL_LINK}>
-                  Open chat
-                </Link>
-              </>
-            )}
-            {canReview && (
-              <Link href={`/trips/${trip.id}/reviews`} className={PILL_LINK}>
-                Reviews
-              </Link>
-            )}
-            {canManage && (
-              <Link href={`/trips/${trip.id}/edit`} className={PILL_LINK}>
-                Edit trip
-              </Link>
-            )}
-          </div>
-        )}
-      </div>
+      </TripCover>
+
+      <h1 className="mt-5 text-2xl font-bold leading-snug">{trip.title}</h1>
 
       {isCancelled && (
-        <p className="mt-4 rounded-xl border border-danger/40 bg-danger/5 p-3 text-sm text-danger">
+        <p className="mt-4 rounded-2xl border border-danger/40 bg-danger/10 p-4 font-medium text-danger">
           This trip was cancelled by the host.
           {trip.myMembership?.status === 'APPROVED' && ' Chat and expenses stay open so you can settle up.'}
         </p>
       )}
 
-      {trip.description && <p className="mt-4 text-sm text-foreground/70">{trip.description}</p>}
+      {tiles.length > 0 && (
+        <div className={`mt-5 grid gap-3 ${tiles.length >= 3 ? 'grid-cols-3' : tiles.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          {tiles.map((t) => (
+            <ActionTile key={t.href} {...t} />
+          ))}
+        </div>
+      )}
 
-      <div className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
-        <div>
-          <div className="text-foreground/50">Dates</div>
-          <div>{formatDateRange(trip.startDate, trip.endDate)}</div>
-        </div>
-        <div>
-          <div className="text-foreground/50">Budget</div>
-          <div>
-            {trip.budgetMin}&ndash;{trip.budgetMax}
+      {trip.description && <p className="mt-5 whitespace-pre-line text-[1.05rem] leading-relaxed">{trip.description}</p>}
+
+      <Card className="mt-5 grid gap-5 p-5 sm:grid-cols-2">
+        <Fact icon={<IconWallet size={22} />} label="Budget per person">
+          {formatBudget(trip.budgetMin, trip.budgetMax)}
+        </Fact>
+        <Fact icon={<IconCalendar size={22} />} label="Dates">
+          {trip.flexibleDates ? 'Flexible' : 'Fixed'}
+          {trip.tripType ? ` · ${trip.tripType}` : ''}
+        </Fact>
+        <div className="sm:col-span-2">
+          <Fact icon={<IconUsers size={22} />} label="Travellers">
+            {trip.approvedCount} of {trip.capacity} places taken
+            {trip.status === 'OPEN' && seatsLeft > 0 && <span className="font-medium text-muted"> · {plural(seatsLeft, 'place')} left</span>}
+          </Fact>
+          <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-surface-2" role="presentation">
+            <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, (trip.approvedCount / trip.capacity) * 100)}%` }} />
           </div>
         </div>
-        <div>
-          <div className="text-foreground/50">Members</div>
-          <div>
-            {trip.approvedCount}/{trip.capacity}
-          </div>
-        </div>
-        <div>
-          <div className="text-foreground/50">Host</div>
-          <div>{trip.host.name}</div>
-        </div>
-        {trip.tripType && (
-          <div>
-            <div className="text-foreground/50">Trip type</div>
-            <div>{trip.tripType}</div>
-          </div>
-        )}
-      </div>
+      </Card>
 
       {trip.includeTags.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-1.5">
+        <div className="mt-4 flex flex-wrap gap-2">
           {trip.includeTags.map((tag) => (
-            <span key={tag.id} className="rounded-full border border-line px-2.5 py-1 text-xs text-foreground/70">
-              {tag.name}
-            </span>
+            <Chip key={tag.id}>{tag.name}</Chip>
           ))}
         </div>
       )}
 
       {isHost && trip.excludeTags && trip.excludeTags.length > 0 && (
         <div className="mt-4">
-          <div className="text-xs text-foreground/50">Excluded (private — only you see this)</div>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <p className="text-[0.9rem] text-muted">Excluded (private — only you see this)</p>
+          <div className="mt-1.5 flex flex-wrap gap-2">
             {trip.excludeTags.map((tag) => (
-              <span
-                key={tag.id}
-                className="rounded-full border border-accent-2/40 px-2.5 py-1 text-xs text-accent-2"
-              >
+              <Chip key={tag.id} className="!bg-transparent !text-accent-2 ring-1 ring-accent-2/50">
                 {tag.name}
-              </span>
+              </Chip>
             ))}
           </div>
         </div>
       )}
 
+      <Card className="mt-5 flex items-center gap-4 p-4">
+        <Avatar name={trip.host.name} size={52} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[0.9rem] text-muted">Hosted by</p>
+          <p className="truncate text-lg font-semibold leading-tight">{trip.host.name}</p>
+          {trip.host.homeCity && <p className="truncate text-[0.95rem] text-muted">{trip.host.homeCity}</p>}
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 font-semibold" title="Trust score">
+          <IconShield size={18} className="text-accent" />
+          {Math.round(trip.host.trustScore)}
+        </span>
+      </Card>
+
       <ErrorText>{actionError}</ErrorText>
 
-      <div className="mt-6">
-        {!isHost && trip.myMembership === null && trip.status === 'OPEN' && (
-          <PrimaryButton type="button" onClick={handleRequestToJoin} disabled={busy} className="w-fit px-6">
+      {/* The one thing most visitors came to do, kept within thumb reach above the tab bar. */}
+      {canRequest && (
+        <div className="sticky bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-10 mt-6 md:bottom-4">
+          <Button size="lg" block onClick={handleRequestToJoin} disabled={busy} className="shadow-card">
             Request to join
-          </PrimaryButton>
-        )}
-        {!isHost && trip.myMembership?.status === 'REQUESTED' && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-foreground/60">Your request is pending.</span>
-            <button
-              type="button"
-              onClick={handleLeave}
-              disabled={busy}
-              className="text-sm text-foreground/60 underline hover:text-foreground"
-            >
-              Withdraw
-            </button>
-          </div>
-        )}
-        {!isHost && !isCancelled && trip.myMembership?.status === 'APPROVED' && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-accent">You&rsquo;re in.</span>
-            <button
-              type="button"
-              onClick={handleLeave}
-              disabled={busy}
-              className="text-sm text-foreground/60 underline hover:text-foreground"
-            >
-              Leave trip
-            </button>
-          </div>
-        )}
-      </div>
-
-      {isApprovedMember && members !== null && user && (
-        <Travellers tripId={trip.id} members={members} meId={user.id} onChanged={load} />
+          </Button>
+        </div>
+      )}
+      {!isHost && trip.myMembership?.status === 'REQUESTED' && (
+        <Card className="mt-6 flex items-center justify-between gap-3 p-4">
+          <span className="font-medium">Request sent — waiting for the host.</span>
+          <Button variant="ghost" size="sm" onClick={() => run(() => leaveTrip(tripId), 'Could not do that.')} disabled={busy}>
+            Withdraw
+          </Button>
+        </Card>
+      )}
+      {!isHost && !isCancelled && trip.myMembership?.status === 'APPROVED' && (
+        <Card className="mt-6 flex items-center justify-between gap-3 p-4">
+          <span className="font-semibold text-accent">You&rsquo;re in. Have a great trip.</span>
+          <Button variant="ghost" size="sm" onClick={() => run(() => leaveTrip(tripId), 'Could not do that.')} disabled={busy}>
+            Leave trip
+          </Button>
+        </Card>
       )}
 
+      {isApprovedMember && members && user && <Travellers tripId={trip.id} members={members} meId={user.id} onChanged={reload} />}
+
       {canMarkComplete && (
-        <div className="mt-6 rounded-xl border border-line bg-surface p-4">
+        <Card className="mt-6 p-4">
           {!hasEnded ? (
-            <p className="text-sm text-foreground/60">
-              Once the trip&apos;s last day is over you can mark it complete, which opens reviews for everyone who
-              went.
+            <p className="text-muted">
+              Once the trip&apos;s last day is over you can mark it complete, which opens reviews for everyone who went.
             </p>
           ) : !hasEnoughMembers ? (
-            <p className="text-sm text-foreground/60">
-              This trip has ended, but reviews are between travellers &mdash; it needs at least one other approved
-              member before it can be marked complete.
+            <p className="text-muted">
+              This trip has ended, but reviews are between travellers &mdash; it needs at least one other approved member
+              before it can be marked complete.
             </p>
           ) : confirmingComplete ? (
             <div>
-              <p className="text-sm text-foreground/80">
-                Mark this trip complete? This can&apos;t be undone &mdash; reviews open for everyone who went.
-              </p>
-              <div className="mt-3 flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={handleComplete}
+              <p>Mark this trip complete? This can&apos;t be undone &mdash; reviews open for everyone who went.</p>
+              <div className="mt-3 flex items-center gap-3">
+                <Button
+                  onClick={() => run(() => completeTrip(tripId), 'Could not mark the trip complete.', () => setConfirmingComplete(false))}
                   disabled={busy}
-                  className="rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-background hover:opacity-90 disabled:opacity-50"
                 >
                   {busy ? 'Saving…' : 'Yes, mark complete'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingComplete(false)}
-                  disabled={busy}
-                  className="text-sm text-foreground/60 underline hover:text-foreground"
-                >
-                  Cancel
-                </button>
+                </Button>
+                <Button variant="ghost" onClick={() => setConfirmingComplete(false)} disabled={busy}>
+                  Not yet
+                </Button>
               </div>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-foreground/70">This trip has ended. Mark it complete to open reviews.</p>
-              <button
-                type="button"
-                onClick={() => setConfirmingComplete(true)}
-                className="shrink-0 rounded-full bg-accent px-4 py-1.5 text-sm font-medium text-background hover:opacity-90"
-              >
+              <p className="text-muted">This trip has ended. Mark it complete to open reviews.</p>
+              <Button onClick={() => setConfirmingComplete(true)} className="shrink-0">
                 Mark complete
-              </button>
+              </Button>
             </div>
           )}
-        </div>
+        </Card>
       )}
 
       {isHost && !isCancelled && (
-        <div className="mt-10">
-          <h2 className="text-lg font-medium">Join requests</h2>
-          {requests !== null && requests.length === 0 && (
-            <p className="mt-2 text-sm text-foreground/60">No pending requests.</p>
-          )}
-          <div className="mt-3 flex flex-col gap-3">
+        <section className="mt-9" aria-labelledby="requests-heading">
+          <h2 id="requests-heading" className="text-xl font-bold">
+            Join requests
+            {requests && requests.length > 0 && <span className="ml-2 text-base font-medium text-muted">{requests.length}</span>}
+          </h2>
+          {requests && requests.length === 0 && <p className="mt-2 text-muted">No pending requests.</p>}
+          <ul className="mt-3 flex flex-col gap-3">
             {requests?.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center justify-between rounded-xl border border-line bg-surface p-4"
-              >
-                <div>
-                  <div className="font-medium">{r.user.name}</div>
-                  <div className="text-xs text-foreground/50">
-                    Trust {r.user.trustScore} &middot; {r.user.homeCity ?? 'no city set'}
+              <li key={r.id}>
+                <Card className="flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
+                  <Avatar name={r.user.name} size={44} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold">{r.user.name}</p>
+                    <p className="text-[0.9rem] text-muted">
+                      Trust {Math.round(r.user.trustScore)} · {r.user.homeCity ?? 'no city set'}
+                    </p>
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => handleRespond(r.id, 'REJECTED')}
-                    className="rounded-full border border-line px-3 py-1.5 text-sm text-foreground/70 hover:text-foreground"
-                  >
-                    Decline
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => handleRespond(r.id, 'APPROVED')}
-                    className="rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-background hover:opacity-90"
-                  >
-                    Approve
-                  </button>
-                </div>
-              </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => run(() => respondToTripRequest(tripId, r.id, 'REJECTED'), 'Could not respond to that request.')}
+                    >
+                      Decline
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => run(() => respondToTripRequest(tripId, r.id, 'APPROVED'), 'Could not respond to that request.')}
+                    >
+                      Approve
+                    </Button>
+                  </div>
+                </Card>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        </section>
       )}
 
       {canManage && (
         <div className="mt-12 border-t border-line pt-6">
           {confirmingCancel ? (
             <div>
-              <p className="text-sm text-foreground/80">
+              <p>
                 Cancel this trip? Pending requests are declined and everyone on the trip is notified. Chat and expenses
                 stay open so you can settle up. This can&apos;t be undone.
               </p>
-              <div className="mt-3 flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={handleCancel}
+              <div className="mt-3 flex items-center gap-3">
+                <Button
+                  variant="danger"
+                  onClick={() => run(() => cancelTrip(tripId), 'Could not cancel the trip.', () => setConfirmingCancel(false))}
                   disabled={busy}
-                  className="rounded-full border border-danger px-4 py-1.5 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
                 >
                   {busy ? 'Cancelling…' : 'Yes, cancel trip'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingCancel(false)}
-                  disabled={busy}
-                  className="text-sm text-foreground/60 underline hover:text-foreground"
-                >
+                </Button>
+                <Button variant="ghost" onClick={() => setConfirmingCancel(false)} disabled={busy}>
                   Keep trip
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmingCancel(true)}
-              className="text-sm text-foreground/50 underline hover:text-danger"
-            >
+            <Button variant="ghost" onClick={() => setConfirmingCancel(true)} className="!text-danger">
               Cancel this trip
-            </button>
+            </Button>
           )}
         </div>
       )}

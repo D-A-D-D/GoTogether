@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { ApiError, type CreateExpenseInput, type Expense } from '@/lib/api';
 import { ErrorText, Label, PrimaryButton, Select, TextInput } from '@/components/form-controls';
+import { Button } from '@/components/ui';
 import { splitEqually, stateFromExpense, type FormMember } from './expense-split';
 
 const CATEGORIES = ['Food', 'Transport', 'Stay', 'Activities', 'Other'];
@@ -186,27 +187,23 @@ export function ExpenseForm({ members, meId, onSubmit, initial, onCancel, idPref
 
       <fieldset>
         <div className="flex items-center justify-between">
-          <legend className="text-sm font-medium text-foreground/80">Split between</legend>
-          <button
-            type="button"
-            onClick={handleToggleCustom}
-            className="text-xs text-foreground/60 underline-offset-2 hover:text-foreground hover:underline"
-          >
+          <legend className="text-[0.95rem] font-semibold">Split between</legend>
+          <Button variant="ghost" size="sm" onClick={handleToggleCustom}>
             {custom ? 'Split equally instead' : 'Set amounts manually'}
-          </button>
+          </Button>
         </div>
         <ul className="mt-2 flex flex-col gap-2">
           {members.map((m) => {
             const index = people.findIndex((p) => p.userId === m.userId);
             const isIncluded = index !== -1;
             return (
-              <li key={m.userId} className="flex items-center justify-between gap-3">
-                <label className="flex items-center gap-2 text-sm">
+              <li key={m.userId} className="flex min-h-12 items-center justify-between gap-3">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={isIncluded}
                     onChange={() => toggleIncluded(m.userId)}
-                    className="accent-accent"
+                    className="h-6 w-6 shrink-0 accent-accent"
                   />
                   {memberLabel(m, meId)}
                 </label>
@@ -220,7 +217,7 @@ export function ExpenseForm({ members, meId, onSubmit, initial, onCancel, idPref
                       className="w-24 text-right"
                     />
                   ) : (
-                    <span className="text-sm tabular-nums text-foreground/60">
+                    <span className="font-semibold tabular-nums">
                       {equalShares[index] !== undefined ? equalShares[index] : '—'}
                     </span>
                   ))}
@@ -230,22 +227,17 @@ export function ExpenseForm({ members, meId, onSubmit, initial, onCancel, idPref
         </ul>
       </fieldset>
 
-      {splitProblem && <p className="text-sm text-foreground/60">{splitProblem}</p>}
+      {splitProblem && <p className="rounded-xl bg-accent-soft px-4 py-2.5 text-[0.95rem] font-medium">{splitProblem}</p>}
       <ErrorText>{error}</ErrorText>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <PrimaryButton type="submit" disabled={!valid || submitting}>
           {submitting ? 'Saving…' : initial ? 'Save changes' : 'Add expense'}
         </PrimaryButton>
         {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={submitting}
-            className="text-sm text-foreground/60 underline hover:text-foreground disabled:opacity-50"
-          >
+          <Button variant="ghost" onClick={onCancel} disabled={submitting}>
             Cancel
-          </button>
+          </Button>
         )}
       </div>
     </form>

@@ -26,16 +26,16 @@ export function TrustHistory() {
 
   return (
     <section className="mt-12">
-      <h2 className="text-lg font-semibold tracking-tight">Trust score history</h2>
-      <p className="mt-1 text-sm text-foreground/60">
+      <h2 className="text-xl font-bold">Trust score history</h2>
+      <p className="mt-1 text-[0.95rem] text-muted">
         Your score moves only when a review about you comes in. Every change is listed here.
       </p>
 
       <div className="mt-3">
         <ErrorText>{error}</ErrorText>
-        {!error && events === null && <p className="text-sm text-foreground/60">Loading…</p>}
+        {!error && events === null && <p className="text-[0.95rem] text-muted">Loading…</p>}
         {events !== null && events.length === 0 && (
-          <p className="text-sm text-foreground/60">
+          <p className="text-[0.95rem] text-muted">
             No changes yet. Your score starts at 50 and moves as reviews from your trips come in.
           </p>
         )}
@@ -44,7 +44,7 @@ export function TrustHistory() {
             {events.map((event) => (
               <li
                 key={event.id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm"
+                className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface shadow-card px-4 py-3 text-[0.95rem]"
               >
                 <div>
                   <p>
@@ -62,7 +62,7 @@ export function TrustHistory() {
                       event.reason
                     )}
                   </p>
-                  <p className="mt-0.5 text-xs text-foreground/50">
+                  <p className="mt-0.5 text-[0.85rem] text-muted">
                     {dateFormat.format(new Date(event.createdAt))}
                     {event.tripId && event.tripTitle && (
                       <>
@@ -78,12 +78,12 @@ export function TrustHistory() {
                 <div className="text-right">
                   <span
                     className={`font-mono font-semibold ${
-                      event.delta > 0 ? 'text-accent' : event.delta < 0 ? 'text-danger' : 'text-foreground/50'
+                      event.delta > 0 ? 'text-accent' : event.delta < 0 ? 'text-danger' : 'text-muted'
                     }`}
                   >
                     {formatDelta(event.delta)}
                   </span>
-                  <span className="ml-2 text-foreground/50">
+                  <span className="ml-2 text-muted">
                     &rarr; <span className="tabular-nums">{event.resultingScore}</span>
                   </span>
                 </div>

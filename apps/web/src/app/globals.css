@@ -1,41 +1,139 @@
 @import "tailwindcss";
 
+/*
+ * GoTogether's palette comes from three places: the deep forest and warm sand of a hill station
+ * at dusk, the terracotta of old walls, and a gold that shows up only on things worth noticing
+ * (trust, matches). Every text/background pair below was measured against WCAG AA - 4.5:1 for
+ * text, 3:1 for the border of an input - because the people using this include a lot of readers
+ * who are not twenty. Do not lighten --muted or --field without re-measuring.
+ */
 :root {
-  --background: #F2F3EE;
-  --foreground: #1B231F;
-  --surface: #FBFBF8;
-  --accent: #1F6F6B;
-  --accent-2: #B4772B;
-  --danger: #9C3B2E;
-  --line: rgba(27, 35, 31, 0.14);
+  --background: #F2E6D6;
+  --foreground: #10312F;
+  --surface: #FFFAF2;
+  --surface-2: #E9DAC4;
+  --muted: #4B5F59;
+  --line: rgba(16, 49, 47, 0.14);
+  --field: #7C8B85;
+  --accent: #AE3B26;
+  --on-accent: #FFF6EA;
+  --accent-soft: rgba(174, 59, 38, 0.1);
+  --accent-2: #7A5200;
+  --forest: #0F3D3A;
+  --gold: #F4B13B;
+  --danger: #A3281E;
+  --shadow: 0 1px 2px rgba(16, 49, 47, 0.06), 0 8px 24px rgba(16, 49, 47, 0.08);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
-  --color-accent: var(--accent);
-  --color-accent-2: var(--accent-2);
-  --color-danger: var(--danger);
+  --color-surface-2: var(--surface-2);
+  --color-muted: var(--muted);
   --color-line: var(--line);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-field: var(--field);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-2: var(--accent-2);
+  --color-forest: var(--forest);
+  --color-gold: var(--gold);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+  --shadow-card: var(--shadow);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #10181A;
-    --foreground: #E9EDE9;
-    --surface: #16201F;
-    --accent: #55B8B0;
-    --accent-2: #DDA35C;
-    --danger: #E2897A;
-    --line: rgba(233, 237, 233, 0.14);
+    --background: #0A1B1A;
+    --foreground: #F2E6D6;
+    --surface: #112826;
+    --surface-2: #18352F;
+    --muted: #A5AA9F;
+    --line: rgba(242, 230, 214, 0.14);
+    --field: #6F7A72;
+    --accent: #EC7D63;
+    --on-accent: #1B0E0B;
+    --accent-soft: rgba(236, 125, 99, 0.14);
+    --accent-2: #F4B13B;
+    --danger: #F28B7D;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
   }
+}
+
+html {
+  /* 17px rather than 16: body copy a notch larger is the cheapest accessibility win there is. */
+  font-size: 106.25%;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display), var(--font-body), sans-serif;
+  letter-spacing: -0.015em;
+}
+
+/* One focus style everywhere, visible on both themes. */
+:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: var(--gold);
+  color: #10312F;
+}
+
+/* Room for the phone's home indicator, and the notch in landscape. */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
+
+/* Pressing something should feel like pressing something. */
+.pressable { transition: transform 120ms ease, background-color 160ms ease, opacity 160ms ease; }
+.pressable:active { transform: scale(0.97); }
+
+/* A page arriving: a short rise and fade, so moving between screens reads as movement. */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.page-enter { animation: page-in 240ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+.pop-in { animation: pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* Placeholders for content on its way. */
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, color-mix(in srgb, var(--surface-2) 55%, var(--surface)) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 10px;
+}
+
+/* Horizontal rows that scroll (filter chips) without a visible bar. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .pop-in, .skeleton { animation: none; }
+  .pressable, .pressable:active { transition: none; transform: none; }
 }
