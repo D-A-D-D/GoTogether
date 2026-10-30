@@ -276,6 +276,8 @@ export interface Trip {
 
 export interface DiscoveredTrip extends Trip {
   matchScore: number;
+  /** The viewer hosts this trip: it is shown in the feed so they can open it, not as a match. */
+  isOwn?: boolean;
 }
 
 export interface TripDetail extends Trip {

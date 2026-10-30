@@ -557,7 +557,8 @@ describe('TripsService — honouring blocks', () => {
     await service.discover('viewer', {} as never);
     const notIn = tripFindMany.mock.calls[0][0].where.hostId.notIn as string[];
     expect(notIn).toContain('blocked-host');
-    expect(notIn).toContain('viewer');
+    // The viewer's own trips are not dropped: they show in the feed and open their trip page.
+    expect(notIn).not.toContain('viewer');
   });
 });
 
@@ -616,6 +617,30 @@ describe('TripsService - discovery and the viewer\'s own memberships', () => {
     );
     const result = await service.discover('viewer', {} as never);
     expect(result.map((t: { id: string }) => t.id)).toEqual(['clear']);
+  });
+
+  it('keeps a trip the viewer hosts in the feed, marked as theirs, and every other trip marked as not', async () => {
+    const mine = { ...candidate('mine', 10, 15), hostId: 'viewer' };
+    const { service, tripFindMany } = discoverWith(
+      [{ tripId: 'mine', status: 'APPROVED', role: 'HOST', trip: { startDate: day(10), endDate: day(15) } }],
+      [mine, candidate('theirs', 20, 22)],
+    );
+    const result = await service.discover('viewer', {} as never);
+    expect(tripFindMany.mock.calls[0][0].where.id.notIn).toEqual([]);
+    expect(result.map((t: { id: string; isOwn: boolean }) => [t.id, t.isOwn]).sort()).toEqual([
+      ['mine', true],
+      ['theirs', false],
+    ]);
+  });
+
+  it("does not filter the viewer's own trip by their own dates or tags, but still filters others that clash with it", async () => {
+    const mine = { ...candidate('mine', 10, 15), hostId: 'viewer', excludeTags: [{ id: 'tag-1' }] };
+    const { service } = discoverWith(
+      [{ tripId: 'mine', status: 'APPROVED', role: 'HOST', trip: { startDate: day(10), endDate: day(15) } }],
+      [mine, candidate('clash', 12, 14)],
+    );
+    const result = await service.discover('viewer', {} as never);
+    expect(result.map((t: { id: string }) => t.id)).toEqual(['mine']);
   });
 
   it('does not treat a pending request or a trip left as taking those dates', async () => {

@@ -203,10 +203,12 @@ export class TripsService {
       this.prisma.tripMembership.findMany({
         relationLoadStrategy: 'join',
         where: { userId },
-        select: { tripId: true, status: true, trip: { select: { startDate: true, endDate: true } } },
+        select: { tripId: true, status: true, role: true, trip: { select: { startDate: true, endDate: true } } },
       }),
     ]);
-    const alreadyInteractedTripIds = ownMemberships.map((m) => m.tripId);
+    // A trip the viewer hosts stays in the feed (it opens their trip page); every other trip they have
+    // already asked to join, are on, or left does not.
+    const alreadyInteractedTripIds = ownMemberships.filter((m) => m.role !== MembershipRole.HOST).map((m) => m.tripId);
     const approvedWindows = ownMemberships.filter((m) => m.status === MembershipStatus.APPROVED);
 
     // 'join': tags and host come back in this one query rather than one query each.
@@ -215,7 +217,7 @@ export class TripsService {
       where: {
         status: TripStatus.OPEN,
         visibility: TripVisibility.PUBLIC,
-        hostId: { notIn: [...blockedHostIds, userId] },
+        hostId: { notIn: [...blockedHostIds] },
         // A suspended or closed host can't run a trip, so it isn't offered to anyone new.
         host: { accountStatus: AccountStatus.ACTIVE },
         id: { notIn: alreadyInteractedTripIds },
@@ -227,6 +229,8 @@ export class TripsService {
     const userTagIds = new Set(user.preferenceTags.map((t) => t.id));
 
     const eligible = candidates.filter((trip) => {
+      // Your own trip is never filtered by your own tags or by the dates it takes up yourself.
+      if (trip.hostId === userId) return true;
       const excludedByTags = trip.excludeTags.some((t) => userTagIds.has(t.id));
       if (excludedByTags) return false;
 
@@ -239,6 +243,7 @@ export class TripsService {
     const scored = eligible
       .map((trip) => ({
         ...this.toPublicTrip(trip, false),
+        isOwn: trip.hostId === userId,
         matchScore: this.matching.score(user, trip, {
           budgetMin: dto.budgetMin,
           budgetMax: dto.budgetMax,

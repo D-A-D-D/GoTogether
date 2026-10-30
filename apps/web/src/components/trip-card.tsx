@@ -16,6 +16,7 @@ export function prefetchTrip(id: string) {
 /** A trip in a feed: a cover to catch the eye, then the facts a person actually decides on. */
 export function TripCard({ trip }: { trip: Trip | DiscoveredTrip }) {
   const matchScore = 'matchScore' in trip ? trip.matchScore : undefined;
+  const isOwn = 'isOwn' in trip && trip.isOwn === true;
   const days = tripDays(trip.startDate, trip.endDate);
 
   return (
@@ -26,10 +27,16 @@ export function TripCard({ trip }: { trip: Trip | DiscoveredTrip }) {
       className="pressable group block overflow-hidden rounded-3xl border border-line bg-surface shadow-card"
     >
       <TripCover seed={trip.destination} photoUrl={trip.coverPhotoUrl} className="aspect-[16/10]">
-        {matchScore !== undefined && (
+        {isOwn ? (
           <Chip tone="gold" className="absolute right-3 top-3 font-bold shadow">
-            {matchScore}% match
+            Your trip
           </Chip>
+        ) : (
+          matchScore !== undefined && (
+            <Chip tone="gold" className="absolute right-3 top-3 font-bold shadow">
+              {matchScore}% match
+            </Chip>
+          )
         )}
         <div className="absolute inset-x-0 bottom-0 p-4">
           <p className="font-display text-[1.7rem] font-bold leading-tight drop-shadow">{trip.destination}</p>

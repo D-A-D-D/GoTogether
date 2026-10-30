@@ -35,7 +35,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#FFF6EA" },
-    { media: "(prefers-color-scheme: dark)", color: "#071B1C" },
+    { media: "(prefers-color-scheme: dark)", color: "#0A1622" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -48,7 +48,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     // loads, which is the point (no flash of the wrong theme) - React should not treat them as a mismatch.
     <html lang="en" className={`${display.variable} ${body.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} suppressHydrationWarning />
       </head>
       <body className="min-h-full">
         <RegisterServiceWorker />
