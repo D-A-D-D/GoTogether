@@ -27,4 +27,6 @@ export const LIMITS = {
   emailLink: { limit: 60, ttl: HOUR_MS },
   /** Heavy or destructive account actions: exporting data, deleting the account. */
   accountAction: { limit: 10, ttl: HOUR_MS },
+  /** Uploading a profile picture, picture or voice note. The per-person limits in MediaService are tighter. */
+  upload: { limit: 120, ttl: 10 * MINUTE_MS },
 } as const;

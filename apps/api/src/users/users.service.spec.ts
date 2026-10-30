@@ -21,6 +21,12 @@ describe('UsersService.toPublicProfile', () => {
     expect(JSON.stringify(profile)).not.toContain('$2a$');
   });
 
+  it('keeps the internal media id inside, and the picture version and read-receipts choice out for the app', () => {
+    const profile = service.toPublicProfile(user({ avatarMediaId: 'media-9', avatarUpdatedAt: '2027-01-01T00:00:00.000Z', readReceipts: false }));
+    expect(profile).not.toHaveProperty('avatarMediaId');
+    expect(profile).toMatchObject({ avatarUpdatedAt: '2027-01-01T00:00:00.000Z', readReceipts: false });
+  });
+
   it('keeps the city, which is what is allowed out', () => {
     expect(service.toPublicProfile(user())).toMatchObject({ id: 'u1', name: 'Una', homeCity: 'Pune' });
   });

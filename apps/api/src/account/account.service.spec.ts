@@ -31,6 +31,7 @@ function harness(
     emailToken: { deleteMany: op('emailToken.deleteMany') },
     block: { deleteMany: op('block.deleteMany') },
     trustScoreEvent: { deleteMany: op('trustScoreEvent.deleteMany') },
+    media: { deleteMany: op('media.deleteMany') },
     $transaction: vi.fn(async (ops: unknown[]) => ops),
   };
   const invalidate = vi.fn();
@@ -125,6 +126,7 @@ describe('AccountService.deleteAccount — what it does', () => {
       'emailToken.deleteMany',
       'block.deleteMany',
       'trustScoreEvent.deleteMany',
+      'media.deleteMany',
       'user.update',
     ]);
   });
@@ -160,6 +162,19 @@ describe('AccountService.deleteAccount — what it does', () => {
     expect(find(ran(), 'emailToken.deleteMany').args.where).toEqual({ userId: 'u1' });
     expect(find(ran(), 'trustScoreEvent.deleteMany').args.where).toEqual({ userId: 'u1' });
     expect(find(ran(), 'block.deleteMany').args.where).toEqual({ OR: [{ blockerId: 'u1' }, { blockedId: 'u1' }] });
+  });
+
+  it('removes their profile picture and anything uploaded but never sent - and nothing already sent in a message', async () => {
+    const { ran } = await run();
+    const where = find(ran(), 'media.deleteMany').args.where;
+    expect(where.ownerId).toBe('u1');
+    // Either an avatar, or a file that belongs to no message. A picture or voice note sent in a chat is neither.
+    expect(where.OR).toEqual([{ kind: 'AVATAR' }, { message: { is: null } }]);
+  });
+
+  it('clears the picture reference on the account row', async () => {
+    const { ran } = await run();
+    expect(find(ran(), 'user.update').args.data).toMatchObject({ avatarMediaId: null, avatarUpdatedAt: null });
   });
 
   it('anonymises the account row, clears their interests, and keeps the row', async () => {
@@ -299,5 +314,32 @@ describe('AccountService.exportData', () => {
     expect(result.account).toMatchObject({ email: 'una@example.com', name: 'Una', preferenceTags: [{ name: 'Foodie', category: 'STYLE' }] });
     expect(result.devicesReceivingNotifications).toBe(2);
     expect(result.notes.join(' ')).toMatch(/blind|revealed/i);
+  });
+});
+
+describe('AccountService.updateSettings', () => {
+  function build() {
+    const update = vi.fn().mockResolvedValue({ readReceipts: false });
+    const invalidate = vi.fn();
+    const service = new AccountService({ user: { update } } as never, { invalidate } as never);
+    return { service, update, invalidate };
+  }
+
+  it('changes read receipts, and returns the new value', async () => {
+    const { service, update } = build();
+    expect(await service.updateSettings('u1', { readReceipts: false })).toEqual({ readReceipts: false });
+    expect(update).toHaveBeenCalledWith({ where: { id: 'u1' }, data: { readReceipts: false }, select: { readReceipts: true } });
+  });
+
+  it('forgets the cached copy straight away, so turning receipts off applies to the very next read', async () => {
+    const { service, invalidate } = build();
+    await service.updateSettings('u1', { readReceipts: false });
+    expect(invalidate).toHaveBeenCalledWith('u1');
+  });
+
+  it('changes nothing it was not sent', async () => {
+    const { service, update } = build();
+    await service.updateSettings('u1', {});
+    expect(update.mock.calls[0][0].data).toEqual({});
   });
 });

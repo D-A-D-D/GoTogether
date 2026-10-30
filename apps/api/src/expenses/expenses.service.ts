@@ -12,7 +12,7 @@ import { MembershipStatus, Prisma } from '../generated/prisma/index.js';
 import { CreateExpenseDto } from './dto/create-expense.dto.js';
 import { changeVerdict, involvedUserIds } from './expense-rules.js';
 
-const PUBLIC_USER_SELECT = { id: true, name: true, trustScore: true } as const;
+const PUBLIC_USER_SELECT = { id: true, name: true, trustScore: true, avatarUpdatedAt: true } as const;
 const EXPENSE_INCLUDE = {
   paidBy: { select: PUBLIC_USER_SELECT },
   // Ids are created in order, so this keeps the people in the order they were listed — otherwise

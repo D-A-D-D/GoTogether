@@ -5,6 +5,8 @@ import type { AccountStatus, UserRole } from '../generated/prisma/index.js';
 export interface AccountState {
   accountStatus: AccountStatus;
   role: UserRole;
+  /** Whether this person shares, and can see, who has read the chat. Changing it invalidates this entry. */
+  readReceipts: boolean;
 }
 
 /** How long a user's status and role are trusted before being re-read. */
@@ -38,7 +40,7 @@ export class AccountStateService {
 
     const row = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { accountStatus: true, role: true },
+      select: { accountStatus: true, role: true, readReceipts: true },
     });
     this.remember(userId, row ?? null, now);
     return row ?? null;

@@ -17,6 +17,7 @@ import { ReviewsModule } from './reviews/reviews.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { SafetyModule } from './safety/safety.module.js';
 import { AccountModule } from './account/account.module.js';
+import { MediaModule } from './media/media.module.js';
 import { AdminModule } from './admin/admin.module.js';
 
 @Module({
@@ -29,6 +30,7 @@ import { AdminModule } from './admin/admin.module.js';
     TagsModule,
     TripsModule,
     ChatModule,
+    MediaModule,
     ExpensesModule,
     ReviewsModule,
     NotificationsModule,

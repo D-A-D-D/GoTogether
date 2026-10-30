@@ -1,12 +1,12 @@
 import { ForbiddenException, Logger } from '@nestjs/common';
-import { CHAT_MESSAGES_PER_WINDOW, CHAT_TOO_FAST, CHAT_WINDOW_MS, ChatGateway } from './chat.gateway.js';
+import { CHAT_MESSAGES_PER_WINDOW, CHAT_READS_PER_WINDOW, CHAT_TOO_FAST, CHAT_WINDOW_MS, ChatGateway } from './chat.gateway.js';
 
 // The gateway's live broadcast, with a fake socket.io server. The point:
 // blocks must hide a message from the blocked person *live*, not just in
 // history, and that has to be decided per recipient.
 
 function harness(
-  options: { hidden?: string[]; roomUserIds?: Array<string | undefined>; createError?: Error; restricted?: string[] } = {},
+  options: { hidden?: string[]; roomUserIds?: Array<string | undefined>; createError?: Error; restricted?: string[]; receipts?: string[] } = {},
 ) {
   const message = { id: 'm1', senderId: 'sender', content: 'hi', sender: { id: 'sender', name: 'Sam' } };
   const sockets = (options.roomUserIds ?? ['sender', 'friend', 'blocked-one']).map((userId) => ({
@@ -20,20 +20,115 @@ function harness(
       ? vi.fn().mockRejectedValue(options.createError)
       : vi.fn().mockResolvedValue(message),
     notifyOthers: vi.fn().mockResolvedValue(undefined),
+    markRead: vi.fn().mockResolvedValue({ messageId: 'm1', at: new Date('2027-01-01T10:00:00Z') }),
   };
   const blocks = { blockedWith: vi.fn().mockResolvedValue(new Set(options.hidden ?? [])) };
   const accounts = {
     get: vi.fn(async (id: string) => ({
       accountStatus: (options.restricted ?? []).includes(id) ? 'SUSPENDED' : 'ACTIVE',
       role: 'USER',
+      readReceipts: (options.receipts ?? []).includes(id),
     })),
   };
   const gateway = new ChatGateway({} as never, {} as never, chatService as never, blocks as never, accounts as never);
   (gateway as unknown as { server: unknown }).server = { in: inRoom };
   const senderSocket = { data: { userId: 'sender' }, disconnect: vi.fn() };
   const send = () => gateway.onSendMessage(senderSocket as never, { tripId: 'trip-1', content: 'hi' } as never);
-  return { send, sockets, inRoom, blocks, message, chatService, gateway, senderSocket, accounts };
+  const markRead = (messageId = 'm1') => gateway.onMarkRead(senderSocket as never, { tripId: 'trip-1', messageId } as never);
+  return { send, markRead, sockets, inRoom, blocks, message, chatService, gateway, senderSocket, accounts };
 }
+
+describe('ChatGateway.onMarkRead - read receipts', () => {
+  const room = ['sender', 'friend', 'blocked-one', 'private'];
+
+  it('records the read and tells the others in the room, when the reader shares read receipts', async () => {
+    const { markRead, sockets, chatService } = harness({ roomUserIds: room, receipts: ['sender', 'friend', 'blocked-one', 'private'], hidden: [] });
+    const ack = await markRead();
+    expect(ack).toEqual({ ok: true, recorded: true });
+    expect(chatService.markRead).toHaveBeenCalledWith('trip-1', 'sender', 'm1');
+    expect(sockets[1].emit).toHaveBeenCalledWith('read', { tripId: 'trip-1', userId: 'sender', messageId: 'm1', at: new Date('2027-01-01T10:00:00Z') });
+  });
+
+  it('does not record or tell anyone when the reader has read receipts off', async () => {
+    const { markRead, sockets, chatService } = harness({ roomUserIds: room, receipts: ['friend'] });
+    expect(await markRead()).toEqual({ ok: true, recorded: false });
+    expect(chatService.markRead).not.toHaveBeenCalled();
+    for (const socket of sockets) expect(socket.emit).not.toHaveBeenCalled();
+  });
+
+  it('tells only people who share theirs too: someone with receipts off does not see that others have read', async () => {
+    const { markRead, sockets } = harness({ roomUserIds: room, receipts: ['sender', 'friend'] });
+    await markRead();
+    expect(sockets[1].emit).toHaveBeenCalled(); // friend: receipts on
+    expect(sockets[2].emit).not.toHaveBeenCalled(); // blocked-one: receipts off
+    expect(sockets[3].emit).not.toHaveBeenCalled(); // private: receipts off
+  });
+
+  it('never tells the reader about their own read, or anyone blocked with them', async () => {
+    const { markRead, sockets } = harness({ roomUserIds: room, receipts: ['sender', 'friend', 'blocked-one', 'private'], hidden: ['blocked-one'] });
+    await markRead();
+    expect(sockets[0].emit).not.toHaveBeenCalled();
+    expect(sockets[2].emit).not.toHaveBeenCalled();
+    expect(sockets[1].emit).toHaveBeenCalled();
+  });
+
+  it('does not tell anyone whose account has since been restricted', async () => {
+    const { markRead, sockets } = harness({ roomUserIds: room, receipts: ['sender', 'friend'], restricted: ['friend'] });
+    await markRead();
+    expect(sockets[1].emit).not.toHaveBeenCalledWith('read', expect.anything());
+  });
+
+  it('says nothing to the room when the read did not move anything forward', async () => {
+    const { markRead, sockets, chatService } = harness({ roomUserIds: room, receipts: ['sender', 'friend'] });
+    chatService.markRead.mockResolvedValue(null);
+    expect(await markRead()).toEqual({ ok: true, recorded: true });
+    for (const socket of sockets) expect(socket.emit).not.toHaveBeenCalled();
+  });
+
+  it('turns a refusal into a plain error, and an unexpected failure into something generic', async () => {
+    const refused = harness({ receipts: ['sender'] });
+    refused.chatService.markRead.mockRejectedValue(new ForbiddenException('Only approved trip members can access this chat'));
+    expect(await refused.markRead()).toEqual({ ok: false, error: 'Only approved trip members can access this chat' });
+
+    const broken = harness({ receipts: ['sender'] });
+    broken.chatService.markRead.mockRejectedValue(new Error('connect ECONNREFUSED db.internal:5432'));
+    const logged = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const ack = (await broken.markRead()) as { ok: boolean; error: string };
+    expect(ack.ok).toBe(false);
+    expect(ack.error).not.toContain('ECONNREFUSED');
+    logged.mockRestore();
+  });
+
+  it('refuses a suspended reader and cuts them off', async () => {
+    const { markRead, chatService, senderSocket } = harness({ receipts: ['sender'], restricted: ['sender'] });
+    const ack = await markRead();
+    expect(ack).toMatchObject({ ok: false });
+    expect(senderSocket.disconnect).toHaveBeenCalledWith(true);
+    expect(chatService.markRead).not.toHaveBeenCalled();
+  });
+
+  it('quietly ignores a flood of read markers rather than erroring on each', async () => {
+    const { markRead, chatService } = harness({ receipts: ['sender'] });
+    for (let i = 0; i < CHAT_READS_PER_WINDOW; i++) await markRead();
+    expect(chatService.markRead).toHaveBeenCalledTimes(CHAT_READS_PER_WINDOW);
+    expect(await markRead()).toEqual({ ok: true, recorded: false });
+    expect(chatService.markRead).toHaveBeenCalledTimes(CHAT_READS_PER_WINDOW);
+  });
+});
+
+describe('ChatGateway.onSendMessage - pictures and voice notes', () => {
+  it('passes the kind and the uploaded file on to be saved', async () => {
+    const { gateway, chatService, senderSocket } = harness();
+    await gateway.onSendMessage(senderSocket as never, { tripId: 'trip-1', kind: 'IMAGE', mediaId: 'media-7', content: 'the fort' } as never);
+    expect(chatService.createMessage).toHaveBeenCalledWith('trip-1', 'sender', 'the fort', { kind: 'IMAGE', mediaId: 'media-7' });
+  });
+
+  it('treats a message with no content as an empty string, so a voice note needs no text', async () => {
+    const { gateway, chatService, senderSocket } = harness();
+    await gateway.onSendMessage(senderSocket as never, { tripId: 'trip-1', kind: 'VOICE', mediaId: 'media-8' } as never);
+    expect(chatService.createMessage).toHaveBeenCalledWith('trip-1', 'sender', '', { kind: 'VOICE', mediaId: 'media-8' });
+  });
+});
 
 describe('ChatGateway.onSendMessage — live broadcast', () => {
   it('sends the message to everyone in the room when nobody is blocked', async () => {

@@ -51,6 +51,15 @@ model User {
   // signing in with Google, which has already verified it). Null until then.
   emailVerifiedAt  DateTime?
 
+  // Profile picture: a Media row of kind AVATAR. avatarUpdatedAt is what clients put in the picture's address
+  // so a changed picture is fetched again and an unchanged one never is. Both are null with no picture.
+  avatarMediaId   String? @unique
+  avatar          Media?  @relation("UserAvatar", fields: [avatarMediaId], references: [id], onDelete: SetNull)
+  avatarUpdatedAt DateTime?
+  // Privacy: whether others can see when this person has read the chat, and whether they can see theirs.
+  // Off means both - the way messaging apps do it - so it is a trade, not a one-way mirror.
+  readReceipts    Boolean @default(true)
+
   preferenceTags Tag[] @relation("UserPreferenceTags")
 
   hostedTrips      Trip[]             @relation("TripHost")
@@ -70,6 +79,8 @@ model User {
   reviewsReceived  Review[]           @relation("ReviewReviewee")
   pushSubscriptions PushSubscription[]
   emailTokens       EmailToken[]
+  media             Media[]            @relation("MediaOwner")
+  chatReadStates    ChatReadState[]
   reportsReviewed     Report[]           @relation("ReportReviewer")
   moderationsMade     ModerationAction[] @relation("ModerationActor")
   moderationsReceived ModerationAction[] @relation("ModerationTarget")
@@ -280,7 +291,62 @@ model ChatRoom {
   trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   messages  Message[]
+  readStates ChatReadState[]
   createdAt DateTime  @default(now())
+}
+
+// How far each member has read in a trip's chat. One row per person per room; only ever moves forward.
+// Only written for people with User.readReceipts on, and only shown to people who have it on too.
+model ChatReadState {
+  roomId String
+  room   ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  lastReadMessageId String?
+  // The createdAt of that message: what "has read everything up to here" is compared against.
+  lastReadAt        DateTime
+
+  @@id([roomId, userId])
+}
+
+enum MessageKind {
+  TEXT
+  IMAGE
+  VOICE
+}
+
+enum MediaKind {
+  AVATAR
+  CHAT_IMAGE
+  CHAT_VOICE
+}
+
+// An uploaded file - a profile picture, or a picture or voice note sent in a trip's chat - kept in the
+// database for now (small, validated, size-capped) so there is no storage service to set up. The
+// bytes are only ever selected by the one route that serves them; every other query leaves `data` out.
+// Moving to object storage later means changing where `data` lives, not who may read it.
+model Media {
+  id      String    @id @default(cuid())
+  ownerId String
+  owner   User      @relation("MediaOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  kind    MediaKind
+  // What the bytes actually are, decided by looking at them - never what the uploader claimed.
+  mime    String
+  size    Int
+  width   Int?
+  height  Int?
+  durationMs Int?
+  // Chat media: the trip it was uploaded for, so it can only be attached to a message there.
+  tripId  String?
+  data    Bytes
+
+  createdAt DateTime @default(now())
+
+  avatarOf User?   @relation("UserAvatar")
+  message  Message?
+
+  @@index([ownerId, kind])
 }
 
 model Message {
@@ -289,7 +355,11 @@ model Message {
   room     ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
   senderId String
   sender   User     @relation(fields: [senderId], references: [id])
+  // The text, or a caption for a picture; empty for a voice note.
   content  String
+  kind     MessageKind @default(TEXT)
+  mediaId  String?     @unique
+  media    Media?      @relation(fields: [mediaId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 

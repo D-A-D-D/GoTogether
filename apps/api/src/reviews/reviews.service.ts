@@ -4,7 +4,7 @@ import { MembershipStatus, TripStatus, type Review, type Trip } from '../generat
 import { CreateReviewDto } from './dto/create-review.dto.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 
-const PUBLIC_SELECT = { id: true, name: true, trustScore: true } as const;
+const PUBLIC_SELECT = { id: true, name: true, trustScore: true, avatarUpdatedAt: true } as const;
 
 // BLUEPRINT §05 tuning constants. Deliberately in one place, not scattered
 // through the formula below — same "live in config, not code" spirit as

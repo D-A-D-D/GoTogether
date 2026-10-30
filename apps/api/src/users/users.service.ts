@@ -59,10 +59,11 @@ export class UsersService {
    * one at all (a Google-only account doesn't) without revealing the hash;
    * deleting an account asks for the password, or the email if there isn't one.
    */
-  toPublicProfile<T extends { passwordHash?: unknown; homeLat?: unknown; homeLng?: unknown }>(
+  toPublicProfile<T extends { passwordHash?: unknown; homeLat?: unknown; homeLng?: unknown; avatarMediaId?: unknown }>(
     user: T,
-  ): Omit<T, 'passwordHash' | 'homeLat' | 'homeLng'> & { hasPassword: boolean } {
-    const { passwordHash, homeLat: _homeLat, homeLng: _homeLng, ...rest } = user;
+  ): Omit<T, 'passwordHash' | 'homeLat' | 'homeLng' | 'avatarMediaId'> & { hasPassword: boolean } {
+    // avatarMediaId is an internal key; what clients get is avatarUpdatedAt, to build the picture's address from.
+    const { passwordHash, homeLat: _homeLat, homeLng: _homeLng, avatarMediaId: _avatarMediaId, ...rest } = user;
     return { ...rest, hasPassword: Boolean(passwordHash) };
   }
 }

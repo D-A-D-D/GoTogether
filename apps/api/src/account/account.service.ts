@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AccountStateService } from '../auth/account-state.service.js';
-import { AccountStatus, MembershipRole, MembershipStatus, TripStatus } from '../generated/prisma/index.js';
+import { AccountStatus, MediaKind, MembershipRole, MembershipStatus, TripStatus } from '../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   RELEASABLE_TRIP_STATUSES,
@@ -10,6 +10,7 @@ import {
   unfinishedTripsMessage,
 } from './account-rules.js';
 import type { DeleteAccountDto } from './dto/delete-account.dto.js';
+import type { UpdateSettingsDto } from './dto/update-settings.dto.js';
 
 /** Export and deletion of a person's own data (BLUEPRINT section 09). */
 @Injectable()
@@ -204,15 +205,33 @@ export class AccountService {
       this.prisma.emailToken.deleteMany({ where: { userId } }),
       this.prisma.block.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }),
       this.prisma.trustScoreEvent.deleteMany({ where: { userId } }),
+      // Their profile picture goes, and so does anything they uploaded but never sent. A picture or voice note
+      // already sent stays with its message, as the message itself does (it is part of other people's chat).
+      this.prisma.media.deleteMany({ where: { ownerId: userId, OR: [{ kind: MediaKind.AVATAR }, { message: { is: null } }] } }),
       this.prisma.user.update({
         where: { id: userId },
-        data: { ...anonymisedProfile(userId, now), preferenceTags: { set: [] } },
+        data: { ...anonymisedProfile(userId, now), avatarMediaId: null, avatarUpdatedAt: null, preferenceTags: { set: [] } },
       }),
     ]);
 
     // Take effect on this instance immediately rather than after the cache expires.
     this.accounts.invalidate(userId);
     return { deleted: true };
+  }
+
+  /**
+   * Privacy settings that other people can feel. Read receipts are changed here, not with the profile,
+   * because turning them off must take effect at once: the cached copy is dropped so the very next
+   * read marker already respects it.
+   */
+  async updateSettings(userId: string, dto: UpdateSettingsDto) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: dto.readReceipts !== undefined ? { readReceipts: dto.readReceipts } : {},
+      select: { readReceipts: true },
+    });
+    this.accounts.invalidate(userId);
+    return user;
   }
 
   /** A stolen session shouldn't be enough to erase someone, so it asks again. */

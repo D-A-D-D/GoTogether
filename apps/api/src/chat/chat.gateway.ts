@@ -17,6 +17,7 @@ import { BlocksService } from '../safety/blocks.service.js';
 import { ChatService } from './chat.service.js';
 import { JoinRoomDto } from './dto/join-room.dto.js';
 import { SendMessageDto } from './dto/send-message.dto.js';
+import { MarkReadDto } from './dto/mark-read.dto.js';
 
 interface AuthedSocket extends Socket {
   data: { userId: string };
@@ -26,6 +27,8 @@ interface AuthedSocket extends Socket {
 export const CHAT_MESSAGES_PER_WINDOW = 15;
 export const CHAT_WINDOW_MS = 10_000;
 export const CHAT_TOO_FAST = 'You are sending messages too quickly - wait a moment and try again';
+/** Read markers are sent as someone scrolls; a generous allowance, and going over it is quietly ignored. */
+export const CHAT_READS_PER_WINDOW = 30;
 
 function roomName(tripId: string): string {
   return `trip:${tripId}`;
@@ -49,6 +52,7 @@ export class ChatGateway implements OnGatewayInit {
 
   /** Messages sent per user, over all their trips. In memory, so per API instance. */
   private readonly sendLimiter = new RateWindow(CHAT_MESSAGES_PER_WINDOW, CHAT_WINDOW_MS);
+  private readonly readLimiter = new RateWindow(CHAT_READS_PER_WINDOW, CHAT_WINDOW_MS);
 
   constructor(
     private readonly jwt: JwtService,
@@ -129,7 +133,7 @@ export class ChatGateway implements OnGatewayInit {
       this.sendLimiter.record(socket.data.userId);
       // Saving the message and finding out who is blocked with the sender do not depend on each other.
       const [message, hidden] = await Promise.all([
-        this.chatService.createMessage(dto.tripId, socket.data.userId, dto.content),
+        this.chatService.createMessage(dto.tripId, socket.data.userId, dto.content ?? '', { kind: dto.kind, mediaId: dto.mediaId }),
         this.blocks.blockedWith(socket.data.userId),
       ]);
       await this.broadcast(dto.tripId, message, hidden);
@@ -139,6 +143,44 @@ export class ChatGateway implements OnGatewayInit {
       return { ok: true, message };
     } catch (error) {
       return { ok: false, error: this.clientError(error, 'Could not send that message - please try again') };
+    }
+  }
+
+  /**
+   * Someone has now read up to a message. Recorded and told to the room only if they share read receipts;
+   * and told only to people who share theirs, and are not blocked with them - the same trade both ways.
+   */
+  @SubscribeMessage('markRead')
+  async onMarkRead(@ConnectedSocket() socket: AuthedSocket, @MessageBody() dto: MarkReadDto) {
+    try {
+      const userId = socket.data.userId;
+      if (!(await this.isInGoodStanding(userId))) {
+        socket.disconnect(true);
+        return { ok: false, error: 'This account is not available' };
+      }
+      if (this.readLimiter.isFull(userId)) return { ok: true, recorded: false };
+      this.readLimiter.record(userId);
+      const state = await this.accounts.get(userId);
+      if (state?.readReceipts !== true) return { ok: true, recorded: false };
+      const moved = await this.chatService.markRead(dto.tripId, userId, dto.messageId);
+      if (moved) await this.broadcastRead(dto.tripId, userId, moved);
+      return { ok: true, recorded: true };
+    } catch (error) {
+      return { ok: false, error: this.clientError(error, 'Could not update that right now') };
+    }
+  }
+
+  private async broadcastRead(tripId: string, readerId: string, read: { messageId: string; at: Date }): Promise<void> {
+    const [hidden, sockets] = await Promise.all([
+      this.blocks.blockedWith(readerId),
+      this.server.in(roomName(tripId)).fetchSockets(),
+    ]);
+    for (const recipient of sockets) {
+      const recipientId = recipient.data.userId as string | undefined;
+      if (recipientId === undefined || recipientId === readerId || hidden.has(recipientId)) continue;
+      const state = await this.accounts.get(recipientId);
+      if (state?.readReceipts !== true || state.accountStatus !== AccountStatus.ACTIVE) continue;
+      recipient.emit('read', { tripId, userId: readerId, messageId: read.messageId, at: read.at });
     }
   }
 

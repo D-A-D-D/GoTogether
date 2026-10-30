@@ -26,13 +26,14 @@ import {
   type Tag,
 } from '../generated/prisma/index.js';
 
-const HOST_SELECT = { id: true, name: true, trustScore: true, homeCity: true } as const;
+const HOST_SELECT = { id: true, name: true, trustScore: true, homeCity: true, avatarUpdatedAt: true } as const;
 const REQUESTER_SELECT = {
   id: true,
   name: true,
   bio: true,
   homeCity: true,
   trustScore: true,
+  avatarUpdatedAt: true,
   preferenceTags: true,
 } as const;
 
@@ -394,7 +395,7 @@ export class TripsService {
         id: true,
         userId: true,
         role: true,
-        user: { select: { id: true, name: true, trustScore: true } },
+        user: { select: { id: true, name: true, trustScore: true, avatarUpdatedAt: true } },
       },
       orderBy: { requestedAt: 'asc' },
     });

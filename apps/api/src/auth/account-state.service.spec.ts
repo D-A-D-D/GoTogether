@@ -17,12 +17,12 @@ describe('AccountStateService', () => {
     expect(findUnique).toHaveBeenCalledTimes(1);
   });
 
-  it('only selects what it needs — status and role', async () => {
+  it('only selects what it needs — status, role and the read-receipts choice', async () => {
     const { service, findUnique } = harness({ u1: { accountStatus: 'ACTIVE', role: 'USER' } });
     await service.get('u1', T0);
     expect(findUnique).toHaveBeenCalledWith({
       where: { id: 'u1' },
-      select: { accountStatus: true, role: true },
+      select: { accountStatus: true, role: true, readReceipts: true },
     });
   });
 
