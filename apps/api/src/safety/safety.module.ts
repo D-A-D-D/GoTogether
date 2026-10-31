@@ -11,6 +11,6 @@ import { SafetyController } from './safety.controller.js';
   providers: [BlocksService, ReportsService],
   controllers: [SafetyController],
   // Trips and chat both have to honour blocks.
-  exports: [BlocksService],
+  exports: [BlocksService, ReportsService],
 })
 export class SafetyModule {}

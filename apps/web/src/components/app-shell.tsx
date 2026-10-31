@@ -71,7 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav aria-label="Main" className="flex flex-1 flex-col gap-1">
             <RailLink href="/trips/discover" label="Discover" active={current === 'discover'} icon={<IconCompass size={26} />} />
             <RailLink href="/trips/mine" label="My trips" active={current === 'mine'} icon={<IconBag size={26} />} />
-            <RailLink href="/profile" label="Profile" active={pathname === '/profile'} icon={<IconUser size={26} />} />
+            <RailLink href="/profile" label="Profile" active={pathname === '/profile'} icon={<ProfileIcon size={26} active={pathname === '/profile'} />} />
             <RailLink href="/settings" label="Settings" active={pathname.startsWith('/settings')} icon={<IconSettings size={26} />} />
             {user?.role === 'ADMIN' && (
               <RailLink href="/admin" label="Admin" active={pathname === '/admin'} icon={<IconShield size={26} />} />
@@ -163,11 +163,22 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </span>
               }
             />
-            <TabLink href="/profile" label="Profile" active={current === 'profile'} icon={<IconUser />} />
+            <TabLink href="/profile" label="Profile" active={current === 'profile'} icon={<ProfileIcon size={26} active={current === 'profile'} />} />
           </ul>
         </nav>
       )}
     </div>
+  );
+}
+
+/** The profile tab shows the person's own picture once they have one, and the plain icon until then. */
+function ProfileIcon({ size, active }: { size: number; active: boolean }) {
+  const { user } = useAuth();
+  if (!user?.avatarUpdatedAt) return <IconUser size={size} />;
+  return (
+    <span className={`rounded-full ${active ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface' : ''}`}>
+      <UserAvatar user={user} size={size} />
+    </span>
   );
 }
 

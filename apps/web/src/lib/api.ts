@@ -661,6 +661,11 @@ export interface ReportInput {
 }
 
 /** Only people you've been on a trip with can be reported (the API enforces it). */
+/** The host removes an approved member. A reason also sends a report for people to review. */
+export function removeTripMember(tripId: string, membershipId: string, input: { reason?: ReportReason; details?: string } = {}) {
+  return apiFetch<TripMembership>(`/trips/${tripId}/members/${membershipId}`, { method: 'DELETE', body: JSON.stringify(input) });
+}
+
 export function reportUser(input: ReportInput) {
   return apiFetch<{ id: string; createdAt: string }>('/reports', { method: 'POST', body: JSON.stringify(input) });
 }

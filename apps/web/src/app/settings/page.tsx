@@ -117,6 +117,11 @@ export default function SettingsPage() {
         <SettingsLink href="/privacy" icon={<IconInfo size={20} />} label="Privacy policy" />
       </SettingsSection>
 
+      <p className="mt-4 text-[0.9rem] text-muted">
+        Trip cover photos come from Wikipedia and Wikimedia Commons, whose pictures are shared under free licences. Each
+        picture&apos;s author and licence are on its Commons page.
+      </p>
+
       <div className="mt-8">
         <Button variant="secondary" onClick={handleLogout}>
           <IconLogout size={20} />

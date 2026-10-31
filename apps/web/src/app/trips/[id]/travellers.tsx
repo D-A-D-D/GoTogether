@@ -5,6 +5,7 @@ import {
   ApiError,
   REPORT_REASONS,
   blockUser,
+  removeTripMember,
   reportUser,
   type ReportReason,
   type TripMember,
@@ -18,18 +19,20 @@ interface TravellersProps {
   tripId: string;
   members: TripMember[];
   meId: string;
-  /** Called after a block, so the list reloads without the person just blocked. */
+  /** The viewer hosts the trip, so can remove people from it. */
+  isHost?: boolean;
+  /** Called after a block or a removal, so the list reloads without the person just blocked. */
   onChanged: () => Promise<void>;
 }
 
-type Panel = { userId: string; kind: 'report' | 'block' } | null;
+type Panel = { userId: string; kind: 'report' | 'block' | 'remove' } | null;
 
 /**
  * Who's on the trip, with Report and Block for each person. Only shown to
  * people on the trip (the API refuses anyone else). Blocked people never
  * appear here, in either direction.
  */
-export function Travellers({ tripId, members, meId, onChanged }: TravellersProps) {
+export function Travellers({ tripId, members, meId, isHost = false, onChanged }: TravellersProps) {
   const [panel, setPanel] = useState<Panel>(null);
   const [reported, setReported] = useState<Set<string>>(new Set());
 
@@ -74,6 +77,11 @@ export function Travellers({ tripId, members, meId, onChanged }: TravellersProps
                           Report
                         </Button>
                       )}
+                      {isHost && m.role !== 'HOST' && (
+                        <Button variant="ghost" size="sm" className="!text-danger" onClick={() => setPanel({ userId: m.userId, kind: 'remove' })}>
+                          Remove
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" className="!text-danger" onClick={() => setPanel({ userId: m.userId, kind: 'block' })}>
                         Block
                       </Button>
@@ -88,6 +96,17 @@ export function Travellers({ tripId, members, meId, onChanged }: TravellersProps
                     onDone={() => {
                       setReported((prev) => new Set(prev).add(m.userId));
                       setPanel(null);
+                    }}
+                    onCancel={() => setPanel(null)}
+                  />
+                )}
+                {open === 'remove' && (
+                  <RemoveForm
+                    tripId={tripId}
+                    member={m}
+                    onDone={async () => {
+                      setPanel(null);
+                      await onChanged();
                     }}
                     onCancel={() => setPanel(null)}
                   />
@@ -108,6 +127,77 @@ export function Travellers({ tripId, members, meId, onChanged }: TravellersProps
         })}
       </ul>
     </section>
+  );
+}
+
+function RemoveForm({
+  tripId,
+  member,
+  onDone,
+  onCancel,
+}: {
+  tripId: string;
+  member: TripMember;
+  onDone: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [alsoReport, setAlsoReport] = useState(false);
+  const [reason, setReason] = useState<ReportReason>('HARASSMENT');
+  const [details, setDetails] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleRemove(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await removeTripMember(tripId, member.id, alsoReport ? { reason, ...(details.trim() ? { details: details.trim() } : {}) } : {});
+      await onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not remove them — try again.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleRemove} className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
+      <p>
+        Remove {member.user.name} from this trip? They lose access to the trip, its chat and its expenses, their seat opens up, and
+        any private chats they have with people on this trip are closed until they ask again. They can ask to join again after a week.
+      </p>
+      <label className="flex items-start gap-3">
+        <input type="checkbox" checked={alsoReport} onChange={(e) => setAlsoReport(e.target.checked)} className="mt-1 h-5 w-5 accent-[var(--accent)]" />
+        <span>Also report them (a person will review it; they are not told who reported them)</span>
+      </label>
+      {alsoReport && (
+        <>
+          <div>
+            <Label htmlFor={`remove-reason-${member.userId}`}>What happened?</Label>
+            <Select id={`remove-reason-${member.userId}`} value={reason} onChange={(e) => setReason(e.target.value as ReportReason)} className="mt-1">
+              {REPORT_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor={`remove-details-${member.userId}`}>Anything else we should know? (optional)</Label>
+            <TextArea id={`remove-details-${member.userId}`} rows={3} maxLength={2000} value={details} onChange={(e) => setDetails(e.target.value)} className="mt-1" />
+          </div>
+        </>
+      )}
+      <ErrorText>{error}</ErrorText>
+      <div className="flex items-center gap-3">
+        <Button type="submit" variant="danger" disabled={busy}>
+          {busy ? 'Removing…' : alsoReport ? 'Remove and report' : 'Remove from trip'}
+        </Button>
+        <Button variant="ghost" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 

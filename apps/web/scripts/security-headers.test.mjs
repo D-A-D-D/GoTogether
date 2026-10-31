@@ -52,9 +52,14 @@ describe('security headers', () => {
 
   it('switch off browser features the app never uses', async () => {
     const policy = (await headersFor('production'))['Permissions-Policy'];
-    for (const feature of ['camera', 'microphone', 'geolocation', 'payment']) {
+    for (const feature of ['camera', 'geolocation', 'payment']) {
       assert.match(policy, new RegExp(`${feature}=\\(\\)`));
     }
+  });
+
+  it("let the app's own pages - and nobody else - use the microphone, which voice messages need", async () => {
+    const policy = (await headersFor('production'))['Permissions-Policy'];
+    assert.match(policy, /microphone=\(self\)/);
   });
 
   it('add HSTS in production, so browsers refuse plain http for two years', async () => {

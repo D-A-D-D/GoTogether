@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
+import { CoverPhotoService } from './cover-photo.service.js';
 import { TripsService } from './trips.service.js';
 import { TripsController } from './trips.controller.js';
 import { MatchingService } from './matching.service.js';
@@ -10,7 +11,7 @@ import { SafetyModule } from '../safety/safety.module.js';
 // controller's JwtAccessGuard needs AuthModuleOptions in its own module scope.
 @Module({
   imports: [PassportModule.register({}), NotificationsModule, SafetyModule],
-  providers: [TripsService, MatchingService],
+  providers: [TripsService, MatchingService, CoverPhotoService],
   controllers: [TripsController],
   exports: [TripsService],
 })

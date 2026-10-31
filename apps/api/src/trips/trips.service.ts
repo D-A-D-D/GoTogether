@@ -3,13 +3,18 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  type OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { MatchingService } from './matching.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { BlocksService } from '../safety/blocks.service.js';
+import { CoverPhotoService, acceptedPhotoUrl } from './cover-photo.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
+import { RemoveMemberDto } from './dto/remove-member.dto.js';
+import { ReportsService } from '../safety/reports.service.js';
 import { DiscoverTripsDto } from './dto/discover-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import { compareDiscovered, pageOf } from './discover-paging.js';
@@ -25,6 +30,9 @@ import {
   type Trip,
   type Tag,
 } from '../generated/prisma/index.js';
+
+/** Someone the host removed from a trip may ask to join it again after this long. */
+export const REREQUEST_AFTER_REMOVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const HOST_SELECT = { id: true, name: true, trustScore: true, homeCity: true, avatarUpdatedAt: true } as const;
 const REQUESTER_SELECT = {
@@ -53,13 +61,46 @@ function isOverlapViolation(error: unknown): boolean {
 }
 
 @Injectable()
-export class TripsService {
+export class TripsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly matching: MatchingService,
     private readonly notifications: NotificationsService,
     private readonly blocks: BlocksService,
+    private readonly covers: CoverPhotoService,
+    private readonly reports: ReportsService,
   ) {}
+
+  private readonly logger = new Logger(TripsService.name);
+
+  onModuleInit(): void {
+    // A little after start-up, so it never slows the API coming up: give trips made before covers existed a picture.
+    setTimeout(() => void this.backfillCoverPhotos(), 20_000).unref();
+  }
+
+  /**
+   * Looks up a picture for a trip without holding anything up. Best effort: an empty string records "looked, found
+   * nothing", so the same trip is not looked up again and again. Never overwrites a picture the host chose.
+   */
+  private attachCoverPhoto(tripId: string, destination: string, title: string, description?: string | null): void {
+    const hint = `${title} ${description?.slice(0, 80) ?? ''}`.trim();
+    void this.covers
+      .find(destination, hint)
+      .then((url) => this.prisma.trip.updateMany({ where: { id: tripId, coverPhotoUrl: null }, data: { coverPhotoUrl: url ?? '' } }))
+      .catch((error: unknown) => this.logger.warn(`Could not attach a cover photo: ${error instanceof Error ? error.message : String(error)}`));
+  }
+
+  async backfillCoverPhotos(limit = 40): Promise<void> {
+    const trips = await this.prisma.trip.findMany({
+      where: { coverPhotoUrl: null, status: { in: [TripStatus.OPEN, TripStatus.FULL] } },
+      select: { id: true, destination: true, title: true, description: true },
+      take: limit,
+    });
+    for (const t of trips) {
+      const url = await this.covers.find(t.destination, `${t.title} ${t.description?.slice(0, 80) ?? ''}`.trim());
+      await this.prisma.trip.updateMany({ where: { id: t.id, coverPhotoUrl: null }, data: { coverPhotoUrl: url ?? '' } });
+    }
+  }
 
   /** Strips the private exclude-tag list unless the viewer is the host (BLUEPRINT §01/§09). */
   toPublicTrip<T extends { excludeTags?: unknown }>(trip: T, viewerIsHost: boolean): Omit<T, 'excludeTags'> {
@@ -104,7 +145,7 @@ export class TripsService {
     await this.assertTagsValid(dto.includeTagIds, dto.excludeTagIds);
 
     try {
-      return await this.prisma.$transaction(
+      const created = await this.prisma.$transaction(
         async (tx) => {
           const trip = await tx.trip.create({
             data: {
@@ -150,6 +191,8 @@ export class TripsService {
         // always enough, unlike a local Postgres.
         { timeout: 15000 },
       );
+      if (!dto.coverPhotoUrl) this.attachCoverPhoto(created.id, dto.destination, dto.title, dto.description);
+      return created;
     } catch (error) {
       if (isOverlapViolation(error)) {
         throw new ConflictException('You already have an approved trip during these dates');
@@ -343,7 +386,12 @@ export class TripsService {
       where: { tripId_userId: { tripId, userId } },
     });
     if (existing) {
-      throw new ConflictException('You have already requested or joined this trip');
+      // Someone the host removed may ask again, but not straight away.
+      const waited = existing.status === MembershipStatus.REMOVED && existing.leftAt ? Date.now() - existing.leftAt.getTime() : 0;
+      if (existing.status !== MembershipStatus.REMOVED) throw new ConflictException('You have already requested or joined this trip');
+      if (waited < REREQUEST_AFTER_REMOVAL_MS) {
+        throw new ConflictException('You were removed from this trip. You can ask to join again after a week.');
+      }
     }
 
     const approvedCount = await this.prisma.tripMembership.count({
@@ -354,9 +402,14 @@ export class TripsService {
     }
 
     try {
-      const membership = await this.prisma.tripMembership.create({
-        data: { tripId, userId, role: MembershipRole.MEMBER, status: MembershipStatus.REQUESTED },
-      });
+      const membership = existing
+        ? await this.prisma.tripMembership.update({
+            where: { id: existing.id },
+            data: { status: MembershipStatus.REQUESTED, requestedAt: new Date(), respondedAt: null, leftAt: null },
+          })
+        : await this.prisma.tripMembership.create({
+            data: { tripId, userId, role: MembershipRole.MEMBER, status: MembershipStatus.REQUESTED },
+          });
       await this.notifications.notifyUser(trip.host.id, {
         title: 'New join request',
         body: `${user.name} wants to join "${trip.title}"`,
@@ -527,8 +580,8 @@ export class TripsService {
   }
 
   /** Host-initiated removal of an approved member — same reopen-if-needed behavior as leave(). */
-  async removeMember(tripId: string, membershipId: string, hostUserId: string) {
-    await this.assertIsHost(tripId, hostUserId);
+  async removeMember(tripId: string, membershipId: string, hostUserId: string, dto: RemoveMemberDto = {}) {
+    const trip = await this.assertIsHost(tripId, hostUserId);
 
     const membership = await this.prisma.tripMembership.findUnique({ where: { id: membershipId } });
     if (!membership || membership.tripId !== tripId) {
@@ -541,11 +594,26 @@ export class TripsService {
       throw new ConflictException('This user is not an approved member of this trip');
     }
 
+    // A reason files a report first, while the two are still on the trip together. Someone already
+    // being looked at is not reported twice; any other refusal (a daily limit) stops the removal, so
+    // the host is told rather than believing a report went in.
+    if (dto.reason) {
+      try {
+        await this.reports.create(hostUserId, { reportedId: membership.userId, reason: dto.reason, details: dto.details, tripId });
+      } catch (error) {
+        if (!(error instanceof ConflictException)) throw error;
+      }
+    }
+
     const updated = await this.prisma.tripMembership.update({
       where: { id: membershipId },
       data: { status: MembershipStatus.REMOVED, leftAt: new Date() },
     });
     await this.reopenIfNoLongerFull(tripId);
+    // Told plainly and without the reason, which is between the host and the people who review reports.
+    await this.notifications
+      .notifyUser(membership.userId, { title: 'Removed from a trip', body: `The host removed you from "${trip.title}"`, url: '/trips/mine' })
+      .catch(() => undefined);
     return updated;
   }
 
@@ -669,6 +737,10 @@ export class TripsService {
     }
     if (dto.tripType !== undefined) data.tripType = dto.tripType === '' ? null : dto.tripType;
     if (dto.coverPhotoUrl !== undefined) data.coverPhotoUrl = dto.coverPhotoUrl;
+    // A new destination gets a new picture - unless the host chose their own, which is never replaced.
+    const lookedUpCover = !trip.coverPhotoUrl || acceptedPhotoUrl(trip.coverPhotoUrl) !== null;
+    const refreshCover = dto.destination !== undefined && dto.destination !== trip.destination && dto.coverPhotoUrl === undefined && lookedUpCover;
+    if (refreshCover) data.coverPhotoUrl = null;
     if (dto.visibility !== undefined) data.visibility = dto.visibility;
     if (dto.includeTagIds !== undefined) data.includeTags = { set: dto.includeTagIds.map((id) => ({ id })) };
     if (dto.excludeTagIds !== undefined) data.excludeTags = { set: dto.excludeTagIds.map((id) => ({ id })) };
@@ -698,6 +770,8 @@ export class TripsService {
       }
       throw error;
     }
+
+    if (refreshCover) this.attachCoverPhoto(tripId, updated.destination, updated.title, updated.description);
 
     if (changes.length > 0) {
       const members = await this.prisma.tripMembership.findMany({

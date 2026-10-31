@@ -4,6 +4,7 @@ import { CurrentUser, type RequestUser } from '../auth/current-user.decorator.js
 import { TripsService } from './trips.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { DiscoverTripsDto } from './dto/discover-trips.dto.js';
+import { RemoveMemberDto } from './dto/remove-member.dto.js';
 import { RespondToRequestDto } from './dto/respond-to-request.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 
@@ -72,8 +73,9 @@ export class TripsController {
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
     @Param('membershipId') membershipId: string,
+    @Body() dto: RemoveMemberDto,
   ) {
-    return this.tripsService.removeMember(id, membershipId, user.userId);
+    return this.tripsService.removeMember(id, membershipId, user.userId, dto);
   }
 
   @Patch(':id')

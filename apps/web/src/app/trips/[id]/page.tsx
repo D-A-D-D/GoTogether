@@ -290,7 +290,7 @@ export default function TripDetailPage() {
         </Card>
       )}
 
-      {isApprovedMember && members && user && <Travellers tripId={trip.id} members={members} meId={user.id} onChanged={reload} />}
+      {isApprovedMember && members && user && <Travellers tripId={trip.id} members={members} meId={user.id} isHost={trip.host.id === user.id} onChanged={reload} />}
 
       {canMarkComplete && (
         <Card className="mt-6 p-4">

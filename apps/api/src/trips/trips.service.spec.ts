@@ -20,8 +20,10 @@ function makeService(
   prisma: Record<string, unknown>,
   notifications: Record<string, unknown> = {},
   blocks: Record<string, unknown> = makeBlocks(),
+  covers: Record<string, unknown> = { find: vi.fn().mockResolvedValue(null) },
+  reports: Record<string, unknown> = { create: vi.fn().mockResolvedValue({}) },
 ) {
-  return new TripsService(prisma as never, {} as never, notifications as never, blocks as never);
+  return new TripsService(prisma as never, {} as never, notifications as never, blocks as never, covers as never, reports as never);
 }
 
 /** A UTC date string like "2026-10-23", `daysFromToday` days from today. */
@@ -587,7 +589,7 @@ describe('TripsService - discovery and the viewer\'s own memberships', () => {
       trip: { findMany: tripFindMany },
     };
     const matching = { score: vi.fn().mockReturnValue(50) };
-    const service = new TripsService(prisma as never, matching as never, {} as never, makeBlocks() as never);
+    const service = new TripsService(prisma as never, matching as never, {} as never, makeBlocks() as never, { find: vi.fn() } as never, {} as never);
     return { service, membershipsFindMany, tripFindMany };
   }
 
@@ -812,5 +814,174 @@ describe('TripsService - suspended and closed accounts', () => {
         expect.objectContaining({ data: expect.objectContaining({ status: 'APPROVED' }) }),
       );
     });
+  });
+});
+
+describe('TripsService - cover photos', () => {
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const created = { id: 'trip-9', title: 'Spiti', destination: 'Spiti, Himachal', description: 'High passes' };
+
+  function creating(find = vi.fn().mockResolvedValue('https://upload.wikimedia.org/a/960px-x.jpg')) {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const service = makeService({ $transaction: vi.fn().mockResolvedValue(created), trip: { updateMany } }, {}, makeBlocks(), { find });
+    return { service, find, updateMany };
+  }
+
+  it('looks up a picture from the place, name and description after saving, without making the host wait', async () => {
+    const { service, find, updateMany } = creating();
+    const dto = { ...(createDto(utcDate(60), utcDate(70)) as object), description: 'High passes' } as never;
+    await service.create('host-1', dto);
+    await flush();
+    expect(find).toHaveBeenCalledWith('Spiti, Himachal', 'Spiti High passes');
+    expect(updateMany).toHaveBeenCalledWith({ where: { id: 'trip-9', coverPhotoUrl: null }, data: { coverPhotoUrl: 'https://upload.wikimedia.org/a/960px-x.jpg' } });
+  });
+
+  it('records "looked, found nothing" as an empty string, and only fills a trip that has no picture yet', async () => {
+    const { service, updateMany } = creating(vi.fn().mockResolvedValue(null));
+    await service.create('host-1', createDto(utcDate(60), utcDate(70)));
+    await flush();
+    expect(updateMany).toHaveBeenCalledWith({ where: { id: 'trip-9', coverPhotoUrl: null }, data: { coverPhotoUrl: '' } });
+  });
+
+  it('does not look anything up when the host chose their own picture', async () => {
+    const { service, find } = creating();
+    await service.create('host-1', { ...(createDto(utcDate(60), utcDate(70)) as object), coverPhotoUrl: 'https://example.com/mine.jpg' } as never);
+    await flush();
+    expect(find).not.toHaveBeenCalled();
+  });
+
+  it('a failed lookup never fails the trip', async () => {
+    const { service } = creating(vi.fn().mockRejectedValue(new Error('offline')));
+    await expect(service.create('host-1', createDto(utcDate(60), utcDate(70)))).resolves.toBe(created);
+    await flush();
+  });
+
+  describe('when the destination changes', () => {
+    function editing(existingCover: string | null) {
+      const trip = { id: 'trip-1', hostId: 'host-1', status: 'OPEN', title: 'Spiti', destination: 'Spiti', description: null, startDate: new Date(utcDate(60)), endDate: new Date(utcDate(70)), budgetMin: 1, budgetMax: 2, capacity: 4, coverPhotoUrl: existingCover };
+      const update = vi.fn().mockResolvedValue({ ...trip, destination: 'Goa', includeTags: [], excludeTags: [], host: {} });
+      const find = vi.fn().mockResolvedValue(null);
+      const service = makeService(
+        { trip: { findUnique: vi.fn().mockResolvedValue(trip), update, updateMany: vi.fn().mockResolvedValue({ count: 1 }) }, tripMembership: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(1) } },
+        { notifyUsers: vi.fn() },
+        makeBlocks(),
+        { find },
+      );
+      return { service, update, find };
+    }
+
+    it('replaces a picture that was looked up, and looks for a new one', async () => {
+      const { service, update, find } = editing('https://thumb.wikimedia.org/old/960px-spiti.jpg');
+      await service.update('trip-1', 'host-1', { destination: 'Goa' });
+      await flush();
+      expect(update.mock.calls[0][0].data.coverPhotoUrl).toBeNull();
+      expect(find).toHaveBeenCalledWith('Goa', 'Spiti');
+    });
+
+    it("never replaces a picture the host chose", async () => {
+      const { service, update, find } = editing('https://example.com/mine.jpg');
+      await service.update('trip-1', 'host-1', { destination: 'Goa' });
+      await flush();
+      expect(update.mock.calls[0][0].data).not.toHaveProperty('coverPhotoUrl');
+      expect(find).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('TripsService.removeMember', () => {
+  const trip = { id: 'trip-1', hostId: 'host-1', title: 'Spiti', status: 'OPEN', capacity: 4 };
+  const member = { id: 'm-1', tripId: 'trip-1', userId: 'guest-1', role: 'MEMBER', status: 'APPROVED' };
+
+  function removing(options: { membership?: Record<string, unknown> | null; reports?: Record<string, unknown> } = {}) {
+    const order: string[] = [];
+    const update = vi.fn().mockImplementation(async () => (order.push('remove'), { ...member, status: 'REMOVED' }));
+    const create = vi.fn().mockImplementation(async () => (order.push('report'), { id: 'r-1' }));
+    const notifyUser = vi.fn().mockResolvedValue(undefined);
+    const service = makeService(
+      {
+        trip: { findUnique: vi.fn().mockResolvedValue(trip) },
+        tripMembership: { findUnique: vi.fn().mockResolvedValue(options.membership === undefined ? member : options.membership), update, count: vi.fn().mockResolvedValue(1) },
+      },
+      { notifyUser },
+      makeBlocks(),
+      { find: vi.fn() },
+      options.reports ?? { create },
+    );
+    return { service, update, create, notifyUser, order };
+  }
+
+  it('lets only the host do it', async () => {
+    const { service, update } = removing();
+    await expect(service.removeMember('trip-1', 'm-1', 'someone-else')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to remove the host, someone from another trip, or someone who is not approved', async () => {
+    await expect(removing({ membership: { ...member, role: 'HOST' } }).service.removeMember('trip-1', 'm-1', 'host-1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(removing({ membership: { ...member, tripId: 'other' } }).service.removeMember('trip-1', 'm-1', 'host-1')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(removing({ membership: { ...member, status: 'REQUESTED' } }).service.removeMember('trip-1', 'm-1', 'host-1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('removes without a report when no reason is given, and tells the person plainly', async () => {
+    const { service, update, create, notifyUser } = removing();
+    await service.removeMember('trip-1', 'm-1', 'host-1');
+    expect(create).not.toHaveBeenCalled();
+    expect(update.mock.calls[0][0].data.status).toBe('REMOVED');
+    expect(notifyUser).toHaveBeenCalledWith('guest-1', expect.objectContaining({ body: 'The host removed you from "Spiti"' }));
+  });
+
+  it('files the report first, naming the trip, then removes', async () => {
+    const { service, create, order } = removing();
+    await service.removeMember('trip-1', 'm-1', 'host-1', { reason: 'HARASSMENT', details: 'Made people uncomfortable' });
+    expect(create).toHaveBeenCalledWith('host-1', { reportedId: 'guest-1', reason: 'HARASSMENT', details: 'Made people uncomfortable', tripId: 'trip-1' });
+    expect(order).toEqual(['report', 'remove']);
+  });
+
+  it('still removes someone who is already being reported, but not when the report is refused for another reason', async () => {
+    const already = removing({ reports: { create: vi.fn().mockRejectedValue(new ConflictException('already')) } });
+    await already.service.removeMember('trip-1', 'm-1', 'host-1', { reason: 'SPAM' });
+    expect(already.update).toHaveBeenCalled();
+
+    const limited = removing({ reports: { create: vi.fn().mockRejectedValue(new Error('too many today')) } });
+    await expect(limited.service.removeMember('trip-1', 'm-1', 'host-1', { reason: 'SPAM' })).rejects.toThrow('too many today');
+    expect(limited.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('TripsService.requestToJoin - after being removed', () => {
+  const open = { id: 'trip-1', hostId: 'host-1', title: 'Spiti', status: 'OPEN', capacity: 4, excludeTags: [], visibility: 'PUBLIC', host: { id: 'host-1', accountStatus: 'ACTIVE' } };
+
+  function asking(existing: Record<string, unknown> | null) {
+    const update = vi.fn().mockResolvedValue({ id: 'm-1', status: 'REQUESTED' });
+    const create = vi.fn().mockResolvedValue({ id: 'm-2', status: 'REQUESTED' });
+    const service = makeService(
+      {
+        trip: { findUnique: vi.fn().mockResolvedValue(open) },
+        user: { findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'guest-1', name: 'Gia', preferenceTags: [], accountStatus: 'ACTIVE' }), findUnique: vi.fn().mockResolvedValue({ id: 'guest-1', name: 'Gia', preferenceTags: [], accountStatus: 'ACTIVE' }) },
+        tripMembership: { findUnique: vi.fn().mockResolvedValue(existing), count: vi.fn().mockResolvedValue(1), update, create },
+      },
+      { notifyUser: vi.fn().mockResolvedValue(undefined) },
+    );
+    return { service, update, create };
+  }
+
+  it('is refused for a week, with a clear reason', async () => {
+    const { service, update } = asking({ id: 'm-1', status: 'REMOVED', leftAt: new Date(Date.now() - 2 * DAY_MS) });
+    await expect(service.requestToJoin('trip-1', 'guest-1')).rejects.toThrow(/removed from this trip/);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('reopens the old request after the week, rather than creating a second membership', async () => {
+    const { service, update, create } = asking({ id: 'm-1', status: 'REMOVED', leftAt: new Date(Date.now() - 8 * DAY_MS) });
+    await service.requestToJoin('trip-1', 'guest-1');
+    expect(create).not.toHaveBeenCalled();
+    expect(update.mock.calls[0][0]).toMatchObject({ where: { id: 'm-1' }, data: { status: 'REQUESTED', leftAt: null, respondedAt: null } });
+  });
+
+  it('is still refused for everyone else who already has a membership', async () => {
+    for (const status of ['REQUESTED', 'APPROVED', 'REJECTED', 'LEFT']) {
+      const { service } = asking({ id: 'm-1', status, leftAt: null });
+      await expect(service.requestToJoin('trip-1', 'guest-1')).rejects.toBeInstanceOf(ConflictException);
+    }
   });
 });
