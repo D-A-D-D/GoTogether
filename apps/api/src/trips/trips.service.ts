@@ -206,9 +206,14 @@ export class TripsService {
         select: { tripId: true, status: true, role: true, trip: { select: { startDate: true, endDate: true } } },
       }),
     ]);
-    // A trip the viewer hosts stays in the feed (it opens their trip page); every other trip they have
-    // already asked to join, are on, or left does not.
-    const alreadyInteractedTripIds = ownMemberships.filter((m) => m.role !== MembershipRole.HOST).map((m) => m.tripId);
+    // A trip the viewer hosts, or is approved on, stays in the feed (it opens that trip's page); every
+    // other trip they have already asked to join or left does not.
+    const joinedTripIds = new Set(
+      ownMemberships.filter((m) => m.role !== MembershipRole.HOST && m.status === MembershipStatus.APPROVED).map((m) => m.tripId),
+    );
+    const alreadyInteractedTripIds = ownMemberships
+      .filter((m) => m.role !== MembershipRole.HOST && m.status !== MembershipStatus.APPROVED)
+      .map((m) => m.tripId);
     const approvedWindows = ownMemberships.filter((m) => m.status === MembershipStatus.APPROVED);
 
     // 'join': tags and host come back in this one query rather than one query each.
@@ -229,8 +234,8 @@ export class TripsService {
     const userTagIds = new Set(user.preferenceTags.map((t) => t.id));
 
     const eligible = candidates.filter((trip) => {
-      // Your own trip is never filtered by your own tags or by the dates it takes up yourself.
-      if (trip.hostId === userId) return true;
+      // Your own trip, or one you have joined, is never filtered by your tags or by the dates it takes up itself.
+      if (trip.hostId === userId || joinedTripIds.has(trip.id)) return true;
       const excludedByTags = trip.excludeTags.some((t) => userTagIds.has(t.id));
       if (excludedByTags) return false;
 
@@ -244,6 +249,7 @@ export class TripsService {
       .map((trip) => ({
         ...this.toPublicTrip(trip, false),
         isOwn: trip.hostId === userId,
+        isJoined: joinedTripIds.has(trip.id),
         matchScore: this.matching.score(user, trip, {
           budgetMin: dto.budgetMin,
           budgetMax: dto.budgetMax,

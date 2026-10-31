@@ -17,6 +17,7 @@ export function prefetchTrip(id: string) {
 export function TripCard({ trip }: { trip: Trip | DiscoveredTrip }) {
   const matchScore = 'matchScore' in trip ? trip.matchScore : undefined;
   const isOwn = 'isOwn' in trip && trip.isOwn === true;
+  const isJoined = 'isJoined' in trip && trip.isJoined === true;
   const days = tripDays(trip.startDate, trip.endDate);
 
   return (
@@ -27,9 +28,9 @@ export function TripCard({ trip }: { trip: Trip | DiscoveredTrip }) {
       className="pressable group block overflow-hidden rounded-3xl border border-line bg-surface shadow-card"
     >
       <TripCover seed={trip.destination} photoUrl={trip.coverPhotoUrl} className="aspect-[16/10]">
-        {isOwn ? (
+        {isOwn || isJoined ? (
           <Chip tone="gold" className="absolute right-3 top-3 font-bold shadow">
-            Your trip
+            {isOwn ? 'Your trip' : 'Joined'}
           </Chip>
         ) : (
           matchScore !== undefined && (

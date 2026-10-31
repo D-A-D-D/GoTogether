@@ -597,7 +597,7 @@ describe('TripsService - discovery and the viewer\'s own memberships', () => {
     expect(membershipsFindMany).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves out every trip the viewer has already asked to join or is on, whatever its status', async () => {
+  it('leaves out every trip the viewer has asked to join or left, but not ones they are approved on', async () => {
     const { service, tripFindMany } = discoverWith(
       [
         { tripId: 'asked', status: 'REQUESTED', trip: { startDate: day(1), endDate: day(2) } },
@@ -607,7 +607,7 @@ describe('TripsService - discovery and the viewer\'s own memberships', () => {
       [],
     );
     await service.discover('viewer', {} as never);
-    expect(tripFindMany.mock.calls[0][0].where.id.notIn).toEqual(['asked', 'on', 'left']);
+    expect(tripFindMany.mock.calls[0][0].where.id.notIn).toEqual(['asked', 'left']);
   });
 
   it('drops a trip whose dates overlap one the viewer is approved on', async () => {
@@ -630,6 +630,19 @@ describe('TripsService - discovery and the viewer\'s own memberships', () => {
     expect(result.map((t: { id: string; isOwn: boolean }) => [t.id, t.isOwn]).sort()).toEqual([
       ['mine', true],
       ['theirs', false],
+    ]);
+  });
+
+  it('keeps a trip the viewer has joined in the feed, marked as joined, even when its dates clash with their own approved dates', async () => {
+    const joined = { ...candidate('joined', 10, 15), excludeTags: [{ id: 'tag-1' }] };
+    const { service } = discoverWith(
+      [{ tripId: 'joined', status: 'APPROVED', role: 'MEMBER', trip: { startDate: day(10), endDate: day(15) } }],
+      [joined, candidate('theirs', 20, 22)],
+    );
+    const result = await service.discover('viewer', {} as never);
+    expect(result.map((t: { id: string; isJoined: boolean; isOwn: boolean }) => [t.id, t.isJoined, t.isOwn]).sort()).toEqual([
+      ['joined', true, false],
+      ['theirs', false, false],
     ]);
   });
 
