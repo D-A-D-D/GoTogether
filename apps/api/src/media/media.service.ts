@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, NotFoundException, PayloadTooLargeException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { BlocksService } from '../safety/blocks.service.js';
 import { AccountStatus, MediaKind, MembershipStatus } from '../generated/prisma/index.js';
@@ -18,6 +18,8 @@ export const MEDIA_LIMITS = {
   chatUploads: { limit: 20, windowMs: 10 * MINUTE_MS },
   /** Profile pictures one person may set in an hour. */
   avatarChanges: { limit: 10, windowMs: HOUR_MS },
+  /** A chat upload that was never sent in a message is thrown away after this long. */
+  unsentMaxAgeMs: 24 * HOUR_MS,
 } as const;
 
 export interface StoredMedia {
@@ -50,7 +52,9 @@ const asBytes = (buffer: Buffer): Uint8Array<ArrayBuffer> => new Uint8Array(buff
  * And uploads are capped by size, by picture dimensions and by rate.
  */
 @Injectable()
-export class MediaService {
+export class MediaService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(MediaService.name);
+  private sweeper: NodeJS.Timeout | undefined;
   private readonly chatUploads = new RateWindow(MEDIA_LIMITS.chatUploads.limit, MEDIA_LIMITS.chatUploads.windowMs);
   private readonly avatarChanges = new RateWindow(MEDIA_LIMITS.avatarChanges.limit, MEDIA_LIMITS.avatarChanges.windowMs);
 
@@ -58,6 +62,33 @@ export class MediaService {
     private readonly prisma: PrismaService,
     private readonly blocks: BlocksService,
   ) {}
+
+  onModuleInit(): void {
+    // Hourly, and not keeping the process alive. Harmless if two instances ever run it: it is idempotent.
+    this.sweeper = setInterval(() => {
+      this.purgeUnsent().catch((error: unknown) =>
+        this.logger.warn(`Clearing unsent uploads failed: ${error instanceof Error ? error.message : String(error)}`),
+      );
+    }, HOUR_MS);
+    this.sweeper.unref();
+  }
+
+  onModuleDestroy(): void {
+    clearInterval(this.sweeper);
+  }
+
+  /** Deletes chat pictures and voice notes that were uploaded but never sent. Profile pictures are never touched. */
+  async purgeUnsent(now: Date = new Date()): Promise<number> {
+    const { count } = await this.prisma.media.deleteMany({
+      where: {
+        kind: { in: [MediaKind.CHAT_IMAGE, MediaKind.CHAT_VOICE] },
+        message: { is: null },
+        createdAt: { lt: new Date(now.getTime() - MEDIA_LIMITS.unsentMaxAgeMs) },
+      },
+    });
+    if (count > 0) this.logger.log(`Cleared ${count} unsent upload(s)`);
+    return count;
+  }
 
   private tooFast(): never {
     throw new HttpException(TOO_MANY_REQUESTS, HttpStatus.TOO_MANY_REQUESTS);

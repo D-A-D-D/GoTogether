@@ -257,3 +257,19 @@ describe('MediaService.getChatMedia', () => {
     await expect(build({ media: null }).service.getChatMedia('member', 'nope')).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('MediaService.purgeUnsent', () => {
+  it('deletes only chat files never attached to a message and older than a day', async () => {
+    const { service, mediaDeleteMany } = build();
+    mediaDeleteMany.mockResolvedValue({ count: 3 });
+    const now = new Date('2027-01-10T12:00:00Z');
+    expect(await service.purgeUnsent(now)).toBe(3);
+    expect(mediaDeleteMany).toHaveBeenCalledWith({
+      where: {
+        kind: { in: ['CHAT_IMAGE', 'CHAT_VOICE'] },
+        message: { is: null },
+        createdAt: { lt: new Date('2027-01-09T12:00:00Z') },
+      },
+    });
+  });
+});
