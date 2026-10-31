@@ -8,6 +8,7 @@ import { BlocksService } from './blocks.service.js';
 function harness(options: { targetExists?: boolean; blocks?: Array<{ blockerId: string; blockedId: string }>; count?: number } = {}) {
   const upsert = vi.fn().mockReturnValue('upsert-op');
   const deleteMany = vi.fn().mockReturnValue('deleteMany-op');
+  const threadDeleteMany = vi.fn().mockReturnValue('thread-op');
   const blockDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
   const transaction = vi.fn().mockResolvedValue([]);
   const blockFindMany = vi.fn().mockResolvedValue(options.blocks ?? []);
@@ -16,9 +17,10 @@ function harness(options: { targetExists?: boolean; blocks?: Array<{ blockerId: 
     user: { findUnique: vi.fn().mockResolvedValue(options.targetExists === false ? null : { id: 'target' }) },
     block: { upsert, findMany: blockFindMany, count, deleteMany: blockDeleteMany },
     tripMembership: { deleteMany },
+    directThread: { deleteMany: threadDeleteMany },
     $transaction: transaction,
   } as never);
-  return { service, upsert, deleteMany, blockDeleteMany, transaction, blockFindMany, count };
+  return { service, upsert, deleteMany, threadDeleteMany, blockDeleteMany, transaction, blockFindMany, count };
 }
 
 describe('BlocksService.blockedWith', () => {
@@ -102,7 +104,20 @@ describe('BlocksService.block', () => {
   it('does both in one transaction, so a block never exists half-applied', async () => {
     const { service, transaction } = harness();
     await service.block('me', 'target');
-    expect(transaction).toHaveBeenCalledWith(['upsert-op', 'deleteMany-op']);
+    expect(transaction).toHaveBeenCalledWith(['upsert-op', 'deleteMany-op', 'thread-op']);
+  });
+
+  it('deletes the private chat between the two, whichever of them asked, so no history survives a block', async () => {
+    const { service, threadDeleteMany } = harness();
+    await service.block('me', 'target');
+    expect(threadDeleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { userLowId: 'me', userHighId: 'target' },
+          { userLowId: 'target', userHighId: 'me' },
+        ],
+      },
+    });
   });
 });
 

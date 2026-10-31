@@ -21,6 +21,7 @@ import { compareDiscovered, pageOf } from './discover-paging.js';
 import { MIN_APPROVED_MEMBERS_TO_COMPLETE, hasTripEnded, isSameUtcDay, startOfUtcDay, startsInThePast } from './trip-rules.js';
 import {
   AccountStatus,
+  DirectStatus,
   MembershipRole,
   MembershipStatus,
   Prisma,
@@ -610,11 +611,36 @@ export class TripsService implements OnModuleInit {
       data: { status: MembershipStatus.REMOVED, leftAt: new Date() },
     });
     await this.reopenIfNoLongerFull(tripId);
+    await this.closePrivateChatsAfterRemoval(tripId, membership.userId);
     // Told plainly and without the reason, which is between the host and the people who review reports.
     await this.notifications
       .notifyUser(membership.userId, { title: 'Removed from a trip', body: `The host removed you from "${trip.title}"`, url: '/trips/mine' })
       .catch(() => undefined);
     return updated;
+  }
+
+  /**
+   * Someone the host removed can no longer talk privately with the people who are still on the trip: those
+   * chats are closed, and to talk again they must be on a trip together and ask - and be accepted - again.
+   */
+  private async closePrivateChatsAfterRemoval(tripId: string, removedUserId: string): Promise<void> {
+    const others = (
+      await this.prisma.tripMembership.findMany({
+        where: { tripId, status: MembershipStatus.APPROVED, userId: { not: removedUserId } },
+        select: { userId: true },
+      })
+    ).map((m) => m.userId);
+    if (others.length === 0) return;
+    await this.prisma.directThread.updateMany({
+      where: {
+        status: { in: [DirectStatus.ACCEPTED, DirectStatus.PENDING] },
+        OR: [
+          { userLowId: removedUserId, userHighId: { in: others } },
+          { userHighId: removedUserId, userLowId: { in: others } },
+        ],
+      },
+      data: { status: DirectStatus.CLOSED },
+    });
   }
 
   /** A trip marked FULL that just lost an approved member should accept requests again. */

@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { getDirectAttention } from '@/lib/api';
+import { useQuery } from '@/lib/query';
+import { usePoll } from '@/lib/use-poll';
 import { activeTab, createVisitStack, routeMeta } from '@/lib/nav';
 import { ButtonLink, IconButton } from '@/components/ui';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -12,6 +15,7 @@ import { SiteFooter } from '@/components/site-footer';
 import {
   IconBack,
   IconBag,
+  IconChat,
   IconCompass,
   IconLogout,
   IconPlus,
@@ -42,6 +46,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const authed = status === 'authenticated';
   const current = activeTab(pathname);
   const showTabs = authed && !meta.immersive;
+  // A dot on Messages when a reply or a request is waiting. Checked every half minute while the app is open.
+  const attention = useQuery('direct:attention', getDirectAttention, { enabled: authed, staleMs: 20_000 });
+  usePoll(() => void attention.refetch(), 30_000, authed);
+  const waiting = (attention.data?.count ?? 0) > 0;
 
   useEffect(() => {
     const onPop = () => visits.markPop();
@@ -71,6 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav aria-label="Main" className="flex flex-1 flex-col gap-1">
             <RailLink href="/trips/discover" label="Discover" active={current === 'discover'} icon={<IconCompass size={26} />} />
             <RailLink href="/trips/mine" label="My trips" active={current === 'mine'} icon={<IconBag size={26} />} />
+            <RailLink href="/messages" label="Messages" active={current === 'messages'} icon={<MessagesIcon size={26} waiting={waiting} />} />
             <RailLink href="/profile" label="Profile" active={pathname === '/profile'} icon={<ProfileIcon size={26} active={pathname === '/profile'} />} />
             <RailLink href="/settings" label="Settings" active={pathname.startsWith('/settings')} icon={<IconSettings size={26} />} />
             {user?.role === 'ADMIN' && (
@@ -150,7 +159,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-label="Main"
           className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur md:hidden"
         >
-          <ul className="mx-auto grid max-w-md grid-cols-4">
+          <ul className="mx-auto grid max-w-md grid-cols-5">
             <TabLink href="/trips/discover" label="Discover" active={current === 'discover'} icon={<IconCompass />} />
             <TabLink href="/trips/mine" label="My trips" active={current === 'mine'} icon={<IconBag />} />
             <TabLink
@@ -163,11 +172,27 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </span>
               }
             />
+            <TabLink href="/messages" label="Messages" active={current === 'messages'} icon={<MessagesIcon size={26} waiting={waiting} />} />
             <TabLink href="/profile" label="Profile" active={current === 'profile'} icon={<ProfileIcon size={26} active={current === 'profile'} />} />
           </ul>
         </nav>
       )}
     </div>
+  );
+}
+
+/** The speech bubble, with a small dot when something in private chat is waiting for the person. */
+function MessagesIcon({ size, waiting }: { size: number; waiting: boolean }) {
+  return (
+    <span className="relative inline-flex">
+      <IconChat size={size} />
+      {waiting && (
+        <>
+          <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-surface bg-accent" />
+          <span className="sr-only">Something is waiting for you</span>
+        </>
+      )}
+    </span>
   );
 }
 

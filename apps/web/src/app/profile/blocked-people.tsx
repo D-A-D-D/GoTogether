@@ -37,7 +37,7 @@ export function BlockedPeople({ standalone = false }: { standalone?: boolean }) 
       {!standalone && <h2 className="text-xl font-bold">Blocked people</h2>}
       <p className={`text-[0.95rem] text-muted ${standalone ? '' : 'mt-1'}`}>
         You and anyone you block don&apos;t see each other in discovery, on trip pages, in travellers lists or in chat.
-        They aren&apos;t told. You can block someone from a trip you share.
+        They aren&apos;t told, and any private chat between you is deleted. You can block someone from a trip you share.
       </p>
 
       <div className="mt-3">

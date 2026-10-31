@@ -100,7 +100,7 @@ export function AccountSettings() {
         ) : (
           <form onSubmit={handleDelete} className="mt-1 flex flex-col gap-3">
             <ul className="list-disc space-y-1 pl-5 text-[0.95rem] text-muted">
-              <li>Your profile (including your profile picture), sign-in, notifications, blocks and trust history are deleted.</li>
+              <li>Your profile (including your profile picture), sign-in, notifications, blocks, trust history and private chats are deleted.</li>
               <li>You leave any trip that hasn&apos;t finished, and your pending requests are withdrawn.</li>
               <li>
                 Messages you sent (with any pictures or voice messages in them), expenses you shared and reviews you wrote

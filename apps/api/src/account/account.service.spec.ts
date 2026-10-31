@@ -30,6 +30,7 @@ function harness(
     oAuthAccount: { deleteMany: op('oAuthAccount.deleteMany') },
     emailToken: { deleteMany: op('emailToken.deleteMany') },
     block: { deleteMany: op('block.deleteMany') },
+    directThread: { deleteMany: op('directThread.deleteMany') },
     trustScoreEvent: { deleteMany: op('trustScoreEvent.deleteMany') },
     media: { deleteMany: op('media.deleteMany') },
     $transaction: vi.fn(async (ops: unknown[]) => ops),
@@ -125,6 +126,7 @@ describe('AccountService.deleteAccount — what it does', () => {
       'oAuthAccount.deleteMany',
       'emailToken.deleteMany',
       'block.deleteMany',
+      'directThread.deleteMany',
       'trustScoreEvent.deleteMany',
       'media.deleteMany',
       'user.update',
@@ -162,6 +164,11 @@ describe('AccountService.deleteAccount — what it does', () => {
     expect(find(ran(), 'emailToken.deleteMany').args.where).toEqual({ userId: 'u1' });
     expect(find(ran(), 'trustScoreEvent.deleteMany').args.where).toEqual({ userId: 'u1' });
     expect(find(ran(), 'block.deleteMany').args.where).toEqual({ OR: [{ blockerId: 'u1' }, { blockedId: 'u1' }] });
+  });
+
+  it('deletes every private chat they are in, whichever side of it they are on', async () => {
+    const { ran } = await run();
+    expect(find(ran(), 'directThread.deleteMany').args.where).toEqual({ OR: [{ userLowId: 'u1' }, { userHighId: 'u1' }] });
   });
 
   it('removes their profile picture and anything uploaded but never sent - and nothing already sent in a message', async () => {

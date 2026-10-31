@@ -33,7 +33,7 @@ export default function TermsPage() {
       <h2>How to behave</h2>
       <p>You agree not to:</p>
       <ul>
-        <li>harass, threaten, discriminate against or deceive other members;</li>
+        <li>harass, threaten, discriminate against or deceive other members, in a trip chat or in a private message;</li>
         <li>post anything unlawful, or that you don&apos;t have the right to share;</li>
         <li>
           send pictures or voice messages that are sexual, violent or abusive, or that show or record someone without

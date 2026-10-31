@@ -1,15 +1,21 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ApiError,
   REPORT_REASONS,
   blockUser,
+  listDirectThreads,
   removeTripMember,
   reportUser,
+  startDirect,
+  type DirectSummary,
   type ReportReason,
   type TripMember,
 } from '@/lib/api';
+import { invalidateQueries, useQuery } from '@/lib/query';
 import { ErrorText, Label, PrimaryButton, Select, TextArea } from '@/components/form-controls';
 import { Button, Card, Chip } from '@/components/ui';
 import { UserAvatar } from '@/components/user-avatar';
@@ -25,7 +31,7 @@ interface TravellersProps {
   onChanged: () => Promise<void>;
 }
 
-type Panel = { userId: string; kind: 'report' | 'block' | 'remove' } | null;
+type Panel = { userId: string; kind: 'report' | 'block' | 'remove' | 'message' } | null;
 
 /**
  * Who's on the trip, with Report and Block for each person. Only shown to
@@ -35,6 +41,8 @@ type Panel = { userId: string; kind: 'report' | 'block' | 'remove' } | null;
 export function Travellers({ tripId, members, meId, isHost = false, onChanged }: TravellersProps) {
   const [panel, setPanel] = useState<Panel>(null);
   const [reported, setReported] = useState<Set<string>>(new Set());
+  const threads = useQuery('direct:threads', listDirectThreads, { staleMs: 10_000 });
+  const threadWith = new Map((threads.data ?? []).map((t) => [t.other.id, t]));
 
   return (
     <section className="mt-9" aria-labelledby="travellers-heading">
@@ -68,8 +76,13 @@ export function Travellers({ tripId, members, meId, isHost = false, onChanged }:
                       )}
                     </p>
                   </div>
+                </div>
                   {!isMe && open === null && (
-                    <div className="flex shrink-0 gap-1">
+                    <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-line pt-2">
+                      <MessageButton
+                        thread={threadWith.get(m.userId)}
+                        onAsk={() => setPanel({ userId: m.userId, kind: 'message' })}
+                      />
                       {reported.has(m.userId) ? (
                         <span className="px-3 text-[0.9rem] text-muted">Reported</span>
                       ) : (
@@ -87,8 +100,8 @@ export function Travellers({ tripId, members, meId, isHost = false, onChanged }:
                       </Button>
                     </div>
                   )}
-                </div>
 
+                {open === 'message' && <MessageForm member={m} onCancel={() => setPanel(null)} />}
                 {open === 'report' && (
                   <ReportForm
                     tripId={tripId}
@@ -127,6 +140,68 @@ export function Travellers({ tripId, members, meId, isHost = false, onChanged }:
         })}
       </ul>
     </section>
+  );
+}
+
+/** Opens the chat if there is one, and otherwise offers to ask. Never says whether a request was declined. */
+function MessageButton({ thread, onAsk }: { thread: DirectSummary | undefined; onAsk: () => void }) {
+  if (thread && thread.view !== 'CLOSED') {
+    const label = thread.view === 'ACCEPTED' ? 'Chat' : thread.view === 'REQUEST_IN' ? 'Reply' : 'Requested';
+    return (
+      <Link href={`/messages/${thread.id}`} className="pressable inline-flex min-h-11 items-center rounded-full px-3 text-[0.95rem] font-semibold text-accent-ink hover:bg-surface-2">
+        {label}
+      </Link>
+    );
+  }
+  return (
+    <Button variant="ghost" size="sm" className="!text-accent-ink" onClick={onAsk}>
+      Message
+    </Button>
+  );
+}
+
+/** One message, to ask. They accept before either of you can send more. */
+function MessageForm({ member, onCancel }: { member: TripMember; onCancel: () => void }) {
+  const router = useRouter();
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSend(event: FormEvent) {
+    event.preventDefault();
+    if (!text.trim()) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const { threadId } = await startDirect(member.userId, text.trim());
+      invalidateQueries('direct:');
+      router.push(`/messages/${threadId}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send that - try again.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSend} className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
+      <p className="text-[0.95rem] text-muted">
+        Send {member.user.name} one message to ask if they would like to chat privately. You can send more once they accept, and they can say no
+        without you being told.
+      </p>
+      <div>
+        <Label htmlFor={`message-${member.userId}`}>Your message</Label>
+        <TextArea id={`message-${member.userId}`} rows={3} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} className="mt-1" />
+      </div>
+      <ErrorText>{error}</ErrorText>
+      <div className="flex items-center gap-3">
+        <PrimaryButton type="submit" disabled={busy || !text.trim()} className="w-fit">
+          {busy ? 'Sending…' : 'Send request'}
+        </PrimaryButton>
+        <Button variant="ghost" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -296,6 +371,7 @@ function BlockConfirm({
     setBusy(true);
     try {
       await blockUser(member.userId);
+      invalidateQueries('direct:');
       await onDone();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not block them — try again.');
@@ -307,8 +383,8 @@ function BlockConfirm({
     <div className="mt-3 border-t border-line pt-3">
       <p>
         Block {member.user.name}? You&apos;ll stop seeing each other in discovery, on trip pages, in travellers lists and
-        in chat, and they won&apos;t be told. It doesn&apos;t remove them from a trip you share, and you can unblock
-        from your profile any time.
+        in chat, and they won&apos;t be told. Your private chat with them, if you have one, is deleted for both of you. It
+        doesn&apos;t remove them from a trip you share, and you can unblock from your profile any time.
       </p>
       <ErrorText>{error}</ErrorText>
       <div className="mt-3 flex items-center gap-3">

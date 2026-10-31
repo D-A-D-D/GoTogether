@@ -131,6 +131,7 @@ The web app's trip screens are static pages made on demand (that is what makes o
 - **Backups.** Neon provides point-in-time restore, with a retention window that depends on the plan. Find out what yours is, and **practise one restore** before launch: a backup you have never restored is a hope, not a backup.
 - **Migrations are additive.** Every migration so far only adds (columns, tables, enum values, indexes). Keep it that way: it is what makes rolling back the application safe (section 7).
 - **Pictures and voice notes are stored in this database** (since 2026-10-30), so it grows with use: a shrunk chat photo is typically a few hundred KB. Watch the database size, and know the plan's storage limit; moving the files to a bucket is logged in IDEAS.md.
+- **Apply the new migration on every database that already exists** (`20261031120000_add_direct_messages`, private chat): run `prisma migrate deploy` again before or right after the release that needs it, exactly as in the first deploy.
 
 ## 6. The API container
 
@@ -191,6 +192,7 @@ Your host's log viewer or a log service (anything that can search JSON) will do;
 - **A restart drops live chat connections** (clients reconnect on their own) and resets the in-memory counters.
 - **Upload size.** Two routes accept a raw file body: a profile picture (up to about 1.7 MB) and a chat file (up to about 4.3 MB). Anything between the browser and the API (a proxy, a CDN) must allow a request body of at least 5 MB, or large pictures will fail with a generic error. The upload and read-receipt rate limits are in memory like the others above.
 - **Emails are fire-and-forget.** A failed send is logged, not retried.
+- **The API makes outbound calls to Wikipedia** (a few small requests per new trip, plus a short sweep 20 seconds after start-up) to find trip cover photos. They have a 4-second timeout and never block anything; if Wikipedia is unreachable the trip simply keeps its generated cover. Pictures are loaded by people's browsers from Wikimedia directly.
 
 ## 9. First deploy: verify it, in this order
 

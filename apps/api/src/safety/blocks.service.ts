@@ -60,6 +60,15 @@ export class BlocksService {
           ],
         },
       }),
+      // Blocking ends the private chat for good: its history is deleted for both people.
+      this.prisma.directThread.deleteMany({
+        where: {
+          OR: [
+            { userLowId: blockerId, userHighId: targetId },
+            { userLowId: targetId, userHighId: blockerId },
+          ],
+        },
+      }),
     ]);
   }
 

@@ -71,6 +71,9 @@ model User {
   reportsReceived  Report[]           @relation("ReportReported")
   blocksInitiated  Block[]            @relation("BlockBlocker")
   blocksReceived   Block[]            @relation("BlockBlocked")
+  directLow        DirectThread[]     @relation("DirectLow")
+  directHigh       DirectThread[]     @relation("DirectHigh")
+  directMessages   DirectMessage[]
   sentMessages     Message[]
   expensesPaid     Expense[]          @relation("ExpensePaidBy")
   expensesLogged   Expense[]          @relation("ExpenseCreatedBy")
@@ -546,4 +549,54 @@ model EmailToken {
   createdAt DateTime          @default(now())
 
   @@index([userId, purpose])
+}
+
+// ---------- Private chat ----------
+
+// Where a private conversation stands. A request carries one message; the other person accepts or declines.
+// Declining is never shown to the person who asked (they just keep waiting), so nobody is told "no".
+// CLOSED: the host removed one of them from a trip they shared, so they must ask - and be accepted - again.
+enum DirectStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CLOSED
+}
+
+// One thread per pair of people: the two ids are stored in sorted order, so the pair is unique whoever asked.
+model DirectThread {
+  id String @id @default(cuid())
+
+  userLowId  String
+  userLow    User   @relation("DirectLow", fields: [userLowId], references: [id], onDelete: Cascade)
+  userHighId String
+  userHigh   User   @relation("DirectHigh", fields: [userHighId], references: [id], onDelete: Cascade)
+
+  requesterId String
+  status      DirectStatus @default(PENDING)
+  requestedAt DateTime     @default(now())
+  respondedAt DateTime?
+
+  lastMessageAt DateTime  @default(now())
+  lowReadAt     DateTime?
+  highReadAt    DateTime?
+
+  messages DirectMessage[]
+
+  @@unique([userLowId, userHighId])
+  @@index([userLowId, lastMessageAt])
+  @@index([userHighId, lastMessageAt])
+}
+
+model DirectMessage {
+  id       String       @id @default(cuid())
+  threadId String
+  thread   DirectThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId String
+  sender   User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([threadId, createdAt])
 }

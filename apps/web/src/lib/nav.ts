@@ -6,7 +6,7 @@ export interface RouteMeta {
   title: string;
   /** Where Back goes if the person has nowhere in the app to go back to. Null on the main tabs. */
   back: string | null;
-  /** One of the four main tabs: no Back button, the tab bar shows. */
+  /** One of the main tabs: no Back button, the tab bar shows. */
   tab: boolean;
   /** A full-screen conversation: the tab bar steps out of the way. */
   immersive: boolean;
@@ -18,6 +18,7 @@ const FIXED: Record<string, RouteMeta> = {
   '/': { title: '', back: null, tab: true, immersive: false },
   '/trips/discover': { title: 'Discover', back: null, tab: true, immersive: false },
   '/trips/mine': { title: 'My trips', back: null, tab: true, immersive: false },
+  '/messages': { title: 'Messages', back: null, tab: true, immersive: false },
   '/profile': { title: 'Profile', back: null, tab: true, immersive: false },
   '/trips/new': { title: 'Host a trip', back: '/trips/discover', ...PLAIN },
   '/admin': { title: 'Admin', back: '/profile', ...PLAIN },
@@ -37,6 +38,8 @@ const FIXED: Record<string, RouteMeta> = {
   '/auth/callback': { title: '', back: '/', ...PLAIN },
 };
 
+const PRIVATE_CHAT = /^\/messages\/[^/]+$/;
+
 const TRIP_PAGE = /^\/trips\/([^/]+)(?:\/(chat|expenses|reviews|edit))?$/;
 
 const TRIP_SECTIONS: Record<string, { title: string; immersive: boolean }> = {
@@ -51,6 +54,8 @@ export function routeMeta(pathname: string): RouteMeta {
   const fixed = FIXED[path];
   if (fixed) return fixed;
 
+  if (PRIVATE_CHAT.test(path)) return { title: 'Private chat', back: '/messages', tab: false, immersive: true };
+
   const trip = TRIP_PAGE.exec(path);
   if (trip) {
     const [, id, section] = trip;
@@ -62,9 +67,10 @@ export function routeMeta(pathname: string): RouteMeta {
 }
 
 /** Which main tab a path belongs to, so a trip's page still lights up "My trips" or "Discover" sensibly. */
-export function activeTab(pathname: string): 'discover' | 'mine' | 'new' | 'profile' | null {
+export function activeTab(pathname: string): 'discover' | 'mine' | 'new' | 'messages' | 'profile' | null {
   if (pathname === '/trips/discover') return 'discover';
   if (pathname === '/trips/mine') return 'mine';
+  if (pathname === '/messages' || pathname.startsWith('/messages/')) return 'messages';
   if (pathname === '/trips/new') return 'new';
   if (pathname === '/profile' || pathname === '/admin' || pathname === '/settings' || pathname.startsWith('/settings/')) return 'profile';
   return null;

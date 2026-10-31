@@ -204,6 +204,8 @@ export class AccountService {
       this.prisma.oAuthAccount.deleteMany({ where: { userId } }),
       this.prisma.emailToken.deleteMany({ where: { userId } }),
       this.prisma.block.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }),
+      // Private chats are between two people: with one gone there is no one to keep them for.
+      this.prisma.directThread.deleteMany({ where: { OR: [{ userLowId: userId }, { userHighId: userId }] } }),
       this.prisma.trustScoreEvent.deleteMany({ where: { userId } }),
       // Their profile picture goes, and so does anything they uploaded but never sent. A picture or voice note
       // already sent stays with its message, as the message itself does (it is part of other people's chat).

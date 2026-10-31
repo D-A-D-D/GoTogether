@@ -792,3 +792,63 @@ export function verifyEmailToken(token: string) {
 export function resendVerificationEmail() {
   return apiFetch<{ alreadyVerified: boolean }>('/auth/resend-verification', { method: 'POST' });
 }
+
+
+// ---------------------------------------------------------------- private chat
+
+/** How a private chat looks to the signed-in person. HIDDEN never reaches the screen. */
+export type DirectView = 'ACCEPTED' | 'REQUEST_IN' | 'REQUEST_OUT' | 'CLOSED' | 'HIDDEN';
+
+export interface DirectPerson {
+  id: string;
+  name: string;
+  avatarUpdatedAt?: string | null;
+}
+
+export interface DirectSummary {
+  id: string;
+  view: DirectView;
+  other: DirectPerson;
+  last: { content: string; senderId: string; createdAt: string } | null;
+  /** A reply to read, or a request waiting for an answer. */
+  unread: boolean;
+  lastMessageAt: string;
+}
+
+export interface DirectMessage {
+  id: string;
+  senderId: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface DirectThreadDetail {
+  thread: { id: string; view: DirectView; other: DirectPerson; canSend: boolean };
+  messages: DirectMessage[];
+}
+
+export function listDirectThreads() {
+  return apiFetch<DirectSummary[]>('/direct/threads');
+}
+
+/** How many private chats need the person (for the badge on the Messages tab). */
+export function getDirectAttention() {
+  return apiFetch<{ count: number }>('/direct/attention');
+}
+
+/** Ask someone to talk privately, with the one message a request may carry. */
+export function startDirect(userId: string, content: string) {
+  return apiFetch<{ threadId: string }>('/direct/requests', { method: 'POST', body: JSON.stringify({ userId, content }) });
+}
+
+export function getDirectMessages(threadId: string) {
+  return apiFetch<DirectThreadDetail>(`/direct/threads/${threadId}/messages`);
+}
+
+export function sendDirect(threadId: string, content: string) {
+  return apiFetch<DirectMessage>(`/direct/threads/${threadId}/messages`, { method: 'POST', body: JSON.stringify({ content }) });
+}
+
+export function respondDirect(threadId: string, decision: 'ACCEPT' | 'DECLINE') {
+  return apiFetch<{ view: DirectView }>(`/direct/threads/${threadId}/respond`, { method: 'POST', body: JSON.stringify({ decision }) });
+}

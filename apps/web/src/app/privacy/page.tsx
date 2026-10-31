@@ -23,8 +23,8 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>What you do in the app:</strong> trips you host, requests to join, messages in trip chats (including
-          pictures and voice messages you send), expenses you add or share in, reviews you write, the trust score that
-          results, and reports and blocks you make.
+          pictures and voice messages you send), private messages to people you share a trip with, expenses you add or
+          share in, reviews you write, the trust score that results, and reports and blocks you make.
         </li>
         <li>
           <strong>Read receipts:</strong> unless you switch them off, how far you have read in each trip chat, so other
@@ -57,6 +57,11 @@ export default function PrivacyPage() {
         <li>Application hosting: [hosting providers].</li>
         <li>Email sending: Resend.</li>
         <li>Browser notification delivery: the push service built into your browser (Google, Mozilla or Apple).</li>
+        <li>
+          Trip photos: when a trip is created or its destination changes, our servers send the place name, and a few
+          words from the trip&apos;s title and description, to Wikipedia (the Wikimedia Foundation) to find a picture of
+          the place. No account details are sent. The pictures are then loaded from Wikimedia by people&apos;s browsers.
+        </li>
       </ul>
 
       <h2>Who can see what</h2>
@@ -65,6 +70,14 @@ export default function PrivacyPage() {
         are revealed. Your messages (with their pictures and voice messages) and expenses are visible to the people on
         the trip. Your email address is not shown to other members. Someone you have blocked, or who has blocked you,
         sees none of this.
+      </p>
+      <p>
+        Private messages are only ever between the two people. You can only ask someone you are on a trip with, and your
+        first request carries one message; nothing more can be sent until they accept, and they are not told if you were
+        declined. We do not read private messages as part of normal running, but they are stored in our database like
+        everything else. If either of you blocks the other, the private chat is deleted for both. If the host removes
+        someone from a trip, their private chats with the people still on it are closed until they are on a trip together
+        again and ask again.
       </p>
       <p>
         Read receipts work both ways: if you switch them off, nobody sees how far you have read, and you do not see
@@ -92,9 +105,10 @@ export default function PrivacyPage() {
         <li>
           <strong>Delete your account:</strong> Profile → Settings → Account and data → Delete my account. Your
           profile (including your profile picture), sign-in, notifications, blocks and trust history are erased.
-          Messages you sent (with any pictures or voice messages in them), expenses you shared and reviews you wrote
-          stay on other people&apos;s trips, shown as &ldquo;Deleted user&rdquo;, because they are part of other
-          people&apos;s records and are needed to settle up. They are no longer linked to your name or email.
+          Messages you sent in trip chats (with any pictures or voice messages in them), expenses you shared and
+          reviews you wrote stay on other people&apos;s trips, shown as &ldquo;Deleted user&rdquo;, because they are
+          part of other people&apos;s records and are needed to settle up. They are no longer linked to your name or
+          email. Your private chats are deleted for both people.
         </li>
         <li>
           <strong>Correct or ask about your data:</strong> edit your profile in the app, or write to [support email

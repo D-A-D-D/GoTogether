@@ -893,21 +893,24 @@ describe('TripsService.removeMember', () => {
   const member = { id: 'm-1', tripId: 'trip-1', userId: 'guest-1', role: 'MEMBER', status: 'APPROVED' };
 
   function removing(options: { membership?: Record<string, unknown> | null; reports?: Record<string, unknown> } = {}) {
+    const membersFindMany = vi.fn().mockResolvedValue([{ userId: 'host-1' }, { userId: 'friend-1' }]);
     const order: string[] = [];
     const update = vi.fn().mockImplementation(async () => (order.push('remove'), { ...member, status: 'REMOVED' }));
     const create = vi.fn().mockImplementation(async () => (order.push('report'), { id: 'r-1' }));
     const notifyUser = vi.fn().mockResolvedValue(undefined);
+    const threadUpdateMany = vi.fn().mockResolvedValue({ count: 2 });
     const service = makeService(
       {
         trip: { findUnique: vi.fn().mockResolvedValue(trip) },
-        tripMembership: { findUnique: vi.fn().mockResolvedValue(options.membership === undefined ? member : options.membership), update, count: vi.fn().mockResolvedValue(1) },
+        tripMembership: { findUnique: vi.fn().mockResolvedValue(options.membership === undefined ? member : options.membership), update, count: vi.fn().mockResolvedValue(1), findMany: membersFindMany },
+        directThread: { updateMany: threadUpdateMany },
       },
       { notifyUser },
       makeBlocks(),
       { find: vi.fn() },
       options.reports ?? { create },
     );
-    return { service, update, create, notifyUser, order };
+    return { service, update, create, notifyUser, order, threadUpdateMany, membersFindMany };
   }
 
   it('lets only the host do it', async () => {
@@ -928,6 +931,27 @@ describe('TripsService.removeMember', () => {
     expect(create).not.toHaveBeenCalled();
     expect(update.mock.calls[0][0].data.status).toBe('REMOVED');
     expect(notifyUser).toHaveBeenCalledWith('guest-1', expect.objectContaining({ body: 'The host removed you from "Spiti"' }));
+  });
+
+  it('closes their private chats with the people still on the trip - and only those', async () => {
+    const { service, threadUpdateMany } = removing();
+    await service.removeMember('trip-1', 'm-1', 'host-1');
+    expect(threadUpdateMany).toHaveBeenCalledWith({
+      where: {
+        status: { in: ['ACCEPTED', 'PENDING'] },
+        OR: [
+          { userLowId: 'guest-1', userHighId: { in: ['host-1', 'friend-1'] } },
+          { userHighId: 'guest-1', userLowId: { in: ['host-1', 'friend-1'] } },
+        ],
+      },
+      data: { status: 'CLOSED' },
+    });
+  });
+
+  it('looks only at people still approved on the trip, so someone who left is not affected', async () => {
+    const { service, membersFindMany } = removing();
+    await service.removeMember('trip-1', 'm-1', 'host-1');
+    expect(membersFindMany.mock.calls[0][0].where).toEqual({ tripId: 'trip-1', status: 'APPROVED', userId: { not: 'guest-1' } });
   });
 
   it('files the report first, naming the trip, then removes', async () => {
@@ -981,7 +1005,7 @@ describe('TripsService.requestToJoin - after being removed', () => {
   it('is still refused for everyone else who already has a membership', async () => {
     for (const status of ['REQUESTED', 'APPROVED', 'REJECTED', 'LEFT']) {
       const { service } = asking({ id: 'm-1', status, leftAt: null });
-      await expect(service.requestToJoin('trip-1', 'guest-1')).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.requestToJoin('trip-1', 'guest-1')).rejects.toThrow('You have already requested or joined this trip');
     }
   });
 });

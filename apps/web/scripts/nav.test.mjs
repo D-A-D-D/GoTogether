@@ -5,8 +5,8 @@ import { describe, it } from 'node:test';
 import { activeTab, createVisitStack, routeMeta } from '../src/lib/nav.ts';
 
 describe('routeMeta', () => {
-  it('treats the four main screens as tabs, with no Back', () => {
-    for (const path of ['/', '/trips/discover', '/trips/mine', '/profile']) {
+  it('treats the main screens as tabs, with no Back', () => {
+    for (const path of ['/', '/trips/discover', '/trips/mine', '/messages', '/profile']) {
       const meta = routeMeta(path);
       assert.equal(meta.tab, true, path);
       assert.equal(meta.back, null, path);
@@ -64,6 +64,15 @@ describe('settings screens', () => {
   });
 });
 
+describe('private chat screens', () => {
+  it('are full-screen conversations that go back to the Messages list', () => {
+    const meta = routeMeta('/messages/abc');
+    assert.equal(meta.tab, false);
+    assert.equal(meta.immersive, true);
+    assert.equal(meta.back, '/messages');
+  });
+});
+
 describe('activeTab', () => {
   it('lights up the matching tab, and nothing for a trip page', () => {
     assert.equal(activeTab('/trips/discover'), 'discover');
@@ -71,6 +80,12 @@ describe('activeTab', () => {
     assert.equal(activeTab('/trips/new'), 'new');
     assert.equal(activeTab('/profile'), 'profile');
     assert.equal(activeTab('/trips/abc'), null);
+  });
+
+  it('keeps Messages lit inside a private chat', () => {
+    assert.equal(activeTab('/messages'), 'messages');
+    assert.equal(activeTab('/messages/abc'), 'messages');
+    assert.equal(activeTab('/messagesfoo'), null);
   });
 });
 
