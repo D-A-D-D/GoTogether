@@ -817,6 +817,32 @@ describe('TripsService - suspended and closed accounts', () => {
   });
 });
 
+describe('TripsService - start-up cover photo sweep', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('does not crash the process when the database is unreachable at that moment', async () => {
+    vi.useFakeTimers();
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const service = makeService({ trip: { findMany: vi.fn().mockRejectedValue(new Error("Can't reach database server")) } });
+    service.onModuleInit();
+    await vi.advanceTimersByTimeAsync(20_000);
+    await vi.advanceTimersByTimeAsync(1);
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('fills in trips that have no picture yet, one at a time', async () => {
+    const find = vi.fn().mockResolvedValue('https://upload.wikimedia.org/a/960px-x.jpg');
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const findMany = vi.fn().mockResolvedValue([{ id: 't1', destination: 'Goa', title: 'Beach', description: null }]);
+    const service = makeService({ trip: { findMany, updateMany } }, {}, makeBlocks(), { find });
+    await service.backfillCoverPhotos();
+    expect(findMany.mock.calls[0][0].where).toMatchObject({ coverPhotoUrl: null });
+    expect(updateMany).toHaveBeenCalledWith({ where: { id: 't1', coverPhotoUrl: null }, data: { coverPhotoUrl: 'https://upload.wikimedia.org/a/960px-x.jpg' } });
+  });
+});
+
 describe('TripsService - cover photos', () => {
   const flush = () => new Promise((resolve) => setImmediate(resolve));
   const created = { id: 'trip-9', title: 'Spiti', destination: 'Spiti, Himachal', description: 'High passes' };

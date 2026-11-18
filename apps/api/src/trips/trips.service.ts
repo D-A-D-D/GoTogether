@@ -76,7 +76,12 @@ export class TripsService implements OnModuleInit {
 
   onModuleInit(): void {
     // A little after start-up, so it never slows the API coming up: give trips made before covers existed a picture.
-    setTimeout(() => void this.backfillCoverPhotos(), 20_000).unref();
+    setTimeout(() => {
+      // Best effort: a database that is asleep or unreachable at that moment must never take the API down with it.
+      this.backfillCoverPhotos().catch((error: unknown) =>
+        this.logger.warn(`Cover photo backfill skipped: ${error instanceof Error ? error.message : String(error)}`),
+      );
+    }, 20_000).unref();
   }
 
   /**
